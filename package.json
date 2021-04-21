@@ -1,0 +1,13 @@
+{
+  "name": "arena-simulation",
+  "version": "1.0.0",
+  "description": "Simulation for Art of War:Legion arena",
+  "main": "index.js",
+  "author": "Kitsune",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "eslint": "^7.24.0",
+    "eslint-config-google": "^0.14.0"
+  }
+}
