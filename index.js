@@ -180,6 +180,57 @@ function findOpponent(myId) {
 }
 
 /**
+  * Oppoent search
+  * @param {number} myId offense's player ID
+  * @return {object}
+  */
+function findOpponent2(myId) {
+  const list = [];
+  const myHero = players[myId].hero;
+  const myPwr = players[myId].pwr;
+  const myTrophies = players[myId].trophies;
+
+  for (j = 0; j < MATCH_LIST_LEN; j++) {
+    oppId = myId + Math.floor(Math.random() * PLAYER_COUNT);
+    if (oppId >= PLAYER_COUNT) {
+      oppId = oppId - PLAYER_COUNT;
+    }
+
+    const oppPwr = players[oppId].pwr;
+    const oppHero = players[oppId].hero;
+    const oppTrophies = players[oppId].locked;
+    const potential =
+      getPotential(myHero, myPwr, myTrophies, oppHero, oppPwr, oppTrophies);
+    list.push(
+        {
+          id: oppId,
+          score: potential.score,
+          winProbability: potential.winProbability,
+          trophyChanges: potential.trophyChanges,
+        }
+    );
+  }
+  let selected = 0;
+  for (j = 1; j < MATCH_LIST_LEN; j++) {
+    aScore = Math.round(list[j].score * 5000);
+    bScore = Math.round(list[selected].score * 5000);
+
+    if (list[j].score > list[selected].score) {
+      selected = j;
+    } else if (list[j].score == list[selected].score) {
+      if (players[list[j].id].locked > players[list[selected].id].locked) {
+        selected = j;
+      }
+    }
+  }
+  return {
+    id: list[selected].id,
+    winProbability: list[selected].winProbability,
+    trophyChanges: list[selected].trophyChanges,
+  };
+}
+
+/**
   * Utility function
   * @return {string} formated time string
   */
@@ -295,6 +346,37 @@ function simulate2() {
   }
 }
 
+/**
+  * Simulate season (new system by dev)
+  * @return {void}
+  */
+function simulate3() {
+  /**
+    * Reset plus/minus
+    * @return {void}
+    */
+  function lockTrophies() {
+    for (i = 0; i < PLAYER_COUNT; i++) {
+      players[i].locked = players[i].trophies;
+    }
+  }
+
+  console.log('sim3');
+  for (day = 0; day < SEASON_DAYS; day++) {
+    lockTrophies();
+    console.log('day ' + day + ' ' + printTime());
+    for (i = 0; i < PLAYER_COUNT; i++) {
+      matchCount = players[i].bp?(MAX_MATCH+ADD_MATCH):(MAX_MATCH);
+      for (match = 0; match < matchCount; match++) {
+        opp = findOpponent2(i);
+        battleRes = battle(i, opp.id, opp.winProbability, opp.trophyChanges);
+        players[i].trophies += battleRes[0];
+        players[opp.id].trophies += battleRes[1];
+      }
+    }
+  }
+}
+/*
 reset();
 simulate1();
 sortPlayers();
@@ -304,3 +386,8 @@ reset();
 simulate2();
 sortPlayers();
 fs.writeFileSync('Sim2.csv', printCSV());
+*/
+reset();
+simulate3();
+sortPlayers();
+fs.writeFileSync('Sim3.csv', printCSV());
