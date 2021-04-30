@@ -2,6 +2,12 @@ fs = require('fs');
 
 // Initialize player base
 
+// Ratio of players with Battle Pass
+const BP_RATIO = 0.3;
+
+// Ratio of players who are inactive
+const INACTIVE_RATIO = 0.01;
+
 // Power Bracket
 // Base army power for each player
 const pDist = [
@@ -62,27 +68,33 @@ const hDist = [
   4, 4, 4, 4, 4, 4, 4, 4, 4];
 
 const players = [];
-let bracket = 0;
+let powerBracket = 0;
 let id = 0;
-let zone = 0;
-for (bracket = 0; bracket < 20; bracket++) {
-  for (n = 0; n < nDist[bracket]; n++) {
-    pwr = pDist[bracket] +
+let timeZone = 0;
+for (powerBracket = 0; powerBracket < 20; powerBracket++) {
+  for (n = 0; n < nDist[powerBracket]; n++) {
+    pwr = pDist[powerBracket] +
           Math.round((Math.random() * 90 * 1000 - (10 * 1000)));
-    bp = (Math.random() < 0.3)?true:false;
+
+    inactive = (Math.random() < INACTIVE_RATIO)?true:false;
+    bp = inactive?
+        false:
+        ((Math.random() < BP_RATIO)?true:false);
     hero = hDist[Math.floor( Math.random() * hDist.length )];
     player = {
       id: id,
       hero: hero,
       pwr: pwr,
       bp: bp,
-      zone: zone,
+      trophies: 2200,
+      inactive: inactive,
+      timeZone: timeZone,
     };
     id++;
-    zone++;
-    if (zone >= 8) zone = 0;
+    timeZone++;
+    if (timeZone >= 8) timeZone = 0;
     players.push(player);
   }
 }
 
-fs.writeFileSync('players.json', JSON.stringify(players));
+fs.writeFileSync('players-0.json', JSON.stringify(players));

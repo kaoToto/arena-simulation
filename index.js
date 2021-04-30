@@ -11,19 +11,28 @@ const RPS = [
 ];
 
 const PLAYER_COUNT = 100 * 1000;
-const SEASON_DAYS = 14;
+let seasonDays = 7;
 const MAX_MATCH = 20;
 const ADD_MATCH = 10;
-const MATCH_LIST_LEN = 75;
-const players = JSON.parse(fs.readFileSync('players.json'));
+
+let players;
+let season = 1; // first season
 
 /**
   * Reset arena
   * @return {void}
   */
 function reset() {
+  players = JSON.parse(fs.readFileSync(`players-${season-1}.json`));
   for (i = 0; i < PLAYER_COUNT; i++) {
-    players[i].trophies = 2500;
+    prevTrophies = players[i].trophies;
+    if (prevTrophies >= 2700) {
+      players[i].trophies = 2500;
+    } else if (prevTrophies >= 2200) {
+      players[i].trophies = 2200;
+    } else {
+      players[i].trophies = 1000;
+    }
     players[i].W = 0;
     players[i].L = 0;
     players[i].S = 0;
@@ -131,103 +140,80 @@ function battle(myId, oppId, winProbability, trophyChanges) {
 /**
   * Oppoent search
   * @param {number} myId offense's player ID
-  * @return {object}
+  * @return {[object]}
   */
-function findOpponent(myId) {
-  const list = [];
+function findOpponents(myId) {
+  const MATCH_SEARCH_LEN = 400;
+  const MATCH_LIST_LEN = 40;
+
   const myHero = players[myId].hero;
   const myPwr = players[myId].pwr;
   const myTrophies = players[myId].trophies;
 
-  for (j = 0; j < MATCH_LIST_LEN; j++) {
+  const listA = [];
+  for (let i = 0; i < MATCH_SEARCH_LEN; i++) {
     oppId = myId + Math.floor(Math.random() * PLAYER_COUNT);
-    if (oppId >= PLAYER_COUNT) {
-      oppId = oppId - PLAYER_COUNT;
-    }
-
+    if (oppId >= PLAYER_COUNT) oppId = oppId - PLAYER_COUNT;
     const oppPwr = players[oppId].pwr;
-    const oppHero = players[oppId].hero;
-    const oppTrophies = players[oppId].trophies;
-    const potential =
-      getPotential(myHero, myPwr, myTrophies, oppHero, oppPwr, oppTrophies);
-    list.push(
-        {
-          id: oppId,
-          score: potential.score,
-          winProbability: potential.winProbability,
-          trophyChanges: potential.trophyChanges,
-        }
-    );
-  }
-  let selected = 0;
-  for (j = 1; j < MATCH_LIST_LEN; j++) {
-    aScore = Math.round(list[j].score * 5000);
-    bScore = Math.round(list[selected].score * 5000);
-
-    if (list[j].score > list[selected].score) {
-      selected = j;
-    } else if (list[j].score == list[selected].score) {
-      if (players[list[j].id].trophies > players[list[selected].id].trophies) {
-        selected = j;
-      }
-    }
-  }
-  return {
-    id: list[selected].id,
-    winProbability: list[selected].winProbability,
-    trophyChanges: list[selected].trophyChanges,
-  };
-}
-
-/**
-  * Oppoent search
-  * @param {number} myId offense's player ID
-  * @return {object}
-  */
-function findOpponent2(myId) {
-  const list = [];
-  const myHero = players[myId].hero;
-  const myPwr = players[myId].pwr;
-  const myTrophies = players[myId].trophies;
-
-  for (j = 0; j < MATCH_LIST_LEN; j++) {
-    oppId = myId + Math.floor(Math.random() * PLAYER_COUNT);
-    if (oppId >= PLAYER_COUNT) {
-      oppId = oppId - PLAYER_COUNT;
-    }
-
-    const oppPwr = players[oppId].pwr;
-    const oppHero = players[oppId].hero;
     const oppTrophies = players[oppId].locked;
+    const fitness1 = Math.pow(0.9, Math.abs(myTrophies - oppTrophies) / 400);
+    const fitness2 = Math.pow(0.9, Math.abs(myPwr - oppPwr) / 100000);
+    const fitness = Math.round(Math.max(fitness1, fitness2) * 100);
+    listA.push({id: oppId, fitness: fitness});
+  }
+  listA.sort( function(a, b) {
+    if (a.fitness > b.fitness) {
+      return -1;
+    } else if (a.fitness < b.fitness) {
+      return 1;
+    }
+    return 0;
+  } );
+
+  const listB = listA.slice(1, MATCH_LIST_LEN + 1);
+  for (let j = 0; j < MATCH_LIST_LEN; j++) {
+    const oppId = listB[j].id;
+    const oppPwr = players[oppId].pwr;
+    const oppTrophies = players[oppId].locked;
+    const oppHero = players[oppId].hero;
     const potential =
       getPotential(myHero, myPwr, myTrophies, oppHero, oppPwr, oppTrophies);
-    list.push(
-        {
-          id: oppId,
-          score: potential.score,
-          winProbability: potential.winProbability,
-          trophyChanges: potential.trophyChanges,
-        }
-    );
+    listB[j].score = potential.score;
+    listB[j].score_sanitized = Math.round(potential.score * 5000);
+    listB[j].winProbability = potential.winProbability;
+    listB[j].trophyChanges = potential.trophyChanges;
   }
-  let selected = 0;
-  for (j = 1; j < MATCH_LIST_LEN; j++) {
-    aScore = Math.round(list[j].score * 5000);
-    bScore = Math.round(list[selected].score * 5000);
-
-    if (list[j].score > list[selected].score) {
-      selected = j;
-    } else if (list[j].score == list[selected].score) {
-      if (players[list[j].id].locked > players[list[selected].id].locked) {
-        selected = j;
-      }
+  listB.sort( function(a, b) {
+    if (a.score_sanitized > b.score_sanitized) {
+      return -1;
+    } else if (a.score_sanitized < b.score_sanitized) {
+      return 1;
+    } else if (players[a.id].locked > players[b.id].locked) {
+      return -1;
+    } else {
+      return 0;
     }
-  }
-  return {
-    id: list[selected].id,
-    winProbability: list[selected].winProbability,
-    trophyChanges: list[selected].trophyChanges,
-  };
+  });
+  return listB;
+  //
+  // let selected = 0;
+  // for (j = 1; j < MATCH_LIST_LEN; j++) {
+  //   aScore = Math.round(list[j].score * 5000);
+  //   bScore = Math.round(list[selected].score * 5000);
+  //
+  //   if (list[j].score > list[selected].score) {
+  //     selected = j;
+  //   } else if (list[j].score == list[selected].score) {
+  //     if (players[list[j].id].locked > players[list[selected].id].locked) {
+  //       selected = j;
+  //     }
+  //   }
+  // }
+  // return {
+  //   id: list[selected].id,
+  //   winProbability: list[selected].winProbability,
+  //   trophyChanges: list[selected].trophyChanges,
+  // };
 }
 
 /**
@@ -244,12 +230,13 @@ function printTime() {
   * @return {void}
   */
 function printCSV() {
-  csv = 'player id,bp,zone,hero,power,trophies,skip,win,loss,d win,d loss\n';
+  csv = 'player id,bp,inactive,zone,hero,power,trophies,skip,win,loss,d win,d loss\n';
   for (i = 0; i < PLAYER_COUNT; i++) {
     csv +=
       players[i].id + ',' +
       players[i].bp + ',' +
-      players[i].zone + ',' +
+      players[i].inactive + ',' +
+      players[i].timeZone + ',' +
       players[i].hero + ',' +
       players[i].pwr + ',' +
       players[i].trophies + ',' +
@@ -278,75 +265,6 @@ function sortPlayers() {
 }
 
 /**
-  * Simulate a regular season
-  * Players in zone 0 play first, then players in zone 1 play,...
-  * @return {void}
-  */
-function simulate1() {
-  console.log('sim2');
-  for (day = 0; day < SEASON_DAYS; day++) {
-    console.log('Day ' + day + ' :' + printTime());
-    const ZONE_BRACKET = PLAYER_COUNT/8;
-    for (let z = 0; z < 8; z++) {
-      console.log('time zone ' + z);
-      for (let i = 0; i < ZONE_BRACKET; i++) {
-        id = ZONE_BRACKET * z + i;
-        matchCount = (players[id].bp)?(MAX_MATCH+ADD_MATCH):(MAX_MATCH);
-        for (let match = 0; match < matchCount; match++) {
-          opp = findOpponent(id);
-          battleRes = battle(id, opp.id, opp.winProbability, opp.trophyChanges);
-          players[id].trophies += battleRes[0];
-          players[opp.id].trophies += battleRes[1];
-        } // for (match)
-      } // for (i)
-    } // for (z)
-  } // for (day)
-}
-
-/**
-  * Simulate season (freezing trophies)
-  * @return {void}
-  */
-function simulate2() {
-  /**
-    * Reset plus/minus
-    * @return {void}
-    */
-  function resetPlusMinus() {
-    for (i = 0; i < PLAYER_COUNT; i++) {
-      players[i].plusMinus = 0;
-    }
-  }
-
-  /**
-    * Update trophies from plus/minus
-    * @return {void}
-    */
-  function updatePlusMinus() {
-    for (i = 0; i < PLAYER_COUNT; i++) {
-      players[i].trophies += players[i].plusMinus;
-      players[i].plusMinus = 0;
-    }
-  }
-
-  resetPlusMinus();
-  console.log('sim2');
-  for (day = 0; day < SEASON_DAYS; day++) {
-    console.log('day ' + day + ' ' + printTime());
-    for (i = 0; i < PLAYER_COUNT; i++) {
-      matchCount = players[i].bp?(MAX_MATCH+ADD_MATCH):(MAX_MATCH);
-      for (match = 0; match < matchCount; match++) {
-        opp = findOpponent(i);
-        battleRes = battle(i, opp.id, opp.winProbability, opp.trophyChanges);
-        players[i].plusMinus += battleRes[0];
-        players[opp.id].plusMinus += battleRes[1];
-      }
-    }
-    updatePlusMinus();
-  }
-}
-
-/**
   * Simulate season (new system by dev)
   * @return {void}
   */
@@ -361,33 +279,48 @@ function simulate3() {
     }
   }
 
-  console.log('sim3');
-  for (day = 0; day < SEASON_DAYS; day++) {
+  console.log(`Season ${season}`);
+  for (day = 0; day < seasonDays; day++) {
     lockTrophies();
-    console.log('day ' + day + ' ' + printTime());
-    for (i = 0; i < PLAYER_COUNT; i++) {
-      matchCount = players[i].bp?(MAX_MATCH+ADD_MATCH):(MAX_MATCH);
-      for (match = 0; match < matchCount; match++) {
-        opp = findOpponent2(i);
-        battleRes = battle(i, opp.id, opp.winProbability, opp.trophyChanges);
-        players[i].trophies += battleRes[0];
-        players[opp.id].trophies += battleRes[1];
-      }
-    }
+
+    console.log('Day ' + day + ' :' + printTime());
+    const ZONE_BRACKET = PLAYER_COUNT/8;
+    for (let z = 0; z < 8; z++) {
+      console.log('Time Zone ' + z);
+      for (let i = 0; i < ZONE_BRACKET; i++) {
+        id = ZONE_BRACKET * z + i;
+        if (players[id].inactive) {
+          // do nothing
+        } else {
+          matchCount = (players[id].bp)?(MAX_MATCH+ADD_MATCH):(MAX_MATCH);
+          const opponents = findOpponents(id);
+          for (let match = 0; match < matchCount; match++) {
+            opp = opponents[match];
+            battleRes =
+              battle(id, opp.id, opp.winProbability, opp.trophyChanges);
+            players[id].trophies += battleRes[0];
+            players[opp.id].trophies += battleRes[1];
+          } // for (match)
+        }
+      } // for (i)
+    } // for (z)
   }
 }
-/*
-reset();
-simulate1();
-sortPlayers();
-fs.writeFileSync('Sim1.csv', printCSV());
+
+seasonDays = 7;
+season = 1;
 
 reset();
-simulate2();
-sortPlayers();
-fs.writeFileSync('Sim2.csv', printCSV());
-*/
-reset();
 simulate3();
+fs.writeFileSync('players-1.json', JSON.stringify(players));
 sortPlayers();
-fs.writeFileSync('Sim3.csv', printCSV());
+fs.writeFileSync(`players-1.csv`, printCSV());
+
+seasonDays = 14;
+for (season = 2; season < 6; season++) {
+  reset();
+  simulate3();
+  fs.writeFileSync(`players-${season}.json`, JSON.stringify(players));
+  sortPlayers();
+  fs.writeFileSync(`players-${season}.csv`, printCSV());
+}
