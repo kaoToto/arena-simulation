@@ -1,5 +1,5 @@
 fs = require('fs');
-
+const TIMEZONE_ORDER = true;
 // Rock Paper Scissors
 const RPS = [
   /*         S      C       A     Z     D */
@@ -16,6 +16,9 @@ const MAX_MATCH = 20;
 const ADD_MATCH = 10;
 const FROZEN  = false
 let players;
+
+//toto: add new table so that sort by trophy  do not impact match order in following seasons.
+let sortedPlayers;
 let season = 1; // first season
 
 /**
@@ -271,21 +274,22 @@ function printTime() {
   * @return {void}
   */
 function printCSV() {
+  sortPlayers();
   csv = 'player id,bp,inactive,zone,hero,power,trophies,skip,win,loss,d win,d loss\n';
   for (i = 0; i < PLAYER_COUNT; i++) {
     csv +=
-      players[i].id + ',' +
-      players[i].bp + ',' +
-      players[i].inactive + ',' +
-      players[i].zone + ',' +
-      players[i].hero + ',' +
-      players[i].pwr + ',' +
-      players[i].trophies + ',' +
-      players[i].S + ',' +
-      players[i].W + ',' +
-      players[i].L + ',' +
-      players[i].dW + ',' +
-      players[i].dL + '\n';
+    sortedPlayers[i].id + ',' +
+    sortedPlayers[i].bp + ',' +
+    sortedPlayers[i].inactive + ',' +
+    sortedPlayers[i].zone + ',' +
+    sortedPlayers[i].hero + ',' +
+    sortedPlayers[i].pwr + ',' +
+    sortedPlayers[i].trophies + ',' +
+    sortedPlayers[i].S + ',' +
+    sortedPlayers[i].W + ',' +
+    sortedPlayers[i].L + ',' +
+    sortedPlayers[i].dW + ',' +
+    sortedPlayers[i].dL + '\n';
   }
   return csv;
 }
@@ -295,7 +299,9 @@ function printCSV() {
   * @return {void}
   */
 function sortPlayers() {
-  players.sort( function(a, b) {
+
+  sortedPlayers = players;
+  sortedPlayers.sort( function(a, b) {
 
     //toto: optimise sort :
     return b.trophies-a.trophies;
@@ -320,6 +326,7 @@ function sortPlayers() {
     }
     return player;   
   });
+  
 }
 /**
   * Simulate season (new system by dev)
@@ -338,7 +345,12 @@ function simulate3() {
       }
     
   }
-  
+
+  //toto: sort player by time zone or below code for tz is irrelevant
+  if(TIMEZONE_ORDER){
+    players.sort((a,b) => a.zone> b.zone );
+  }
+
   console.log(`Season ${season}`);
   for (day = 0; day < seasonDays; day++) {
     
@@ -376,7 +388,7 @@ reset();
 cleanTrophies();
 simulate3();
 fs.writeFileSync('players-1.json', JSON.stringify(players));
-sortPlayers();
+
 fs.writeFileSync(`players-1.csv`, printCSV());
 
 seasonDays = 14;
@@ -384,6 +396,6 @@ for (season = 2; season < 6; season++) {
   reset();
   simulate3();
   fs.writeFileSync(`players-${season}.json`, JSON.stringify(players));
-  sortPlayers();
+  
   fs.writeFileSync(`players-${season}.csv`, printCSV());
 }
