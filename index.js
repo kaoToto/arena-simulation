@@ -277,7 +277,7 @@ function printCSV() {
       players[i].id + ',' +
       players[i].bp + ',' +
       players[i].inactive + ',' +
-      players[i].timeZone + ',' +
+      players[i].zone + ',' +
       players[i].hero + ',' +
       players[i].pwr + ',' +
       players[i].trophies + ',' +
