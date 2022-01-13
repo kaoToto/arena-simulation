@@ -65,7 +65,7 @@ function getWinProbability(myPwr, oppPwr) {
   * Get trophy change from battle result
   * @param {number} myTrophies offense
   * @param {number} oppTrophies defens
-  * @return {[number]} [attacker win, attacker loss, defense Win, defenser Loss]
+  * @return {[number]} [attackerwin, attacker loss, defense Win, defenser Loss]
   */
 function getTrophyChanges(myTrophies, oppTrophies) {
   const MAX_CHANGE = 32;
@@ -151,7 +151,7 @@ function battle(myId, oppId, winProbability, trophyChanges) {
     players[myId].W += 1;
     players[oppId].dL += 1;
     /// toto: adapted as defensive wins and losses are not symetrical
-    return [trophyChanges[0], trophyChanges[4]];
+    return [trophyChanges[0], trophyChanges[3]];
   }
 
   players[myId].L += 1;
