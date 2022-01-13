@@ -1,4 +1,5 @@
 fs = require('fs');
+const FROZEN  = false
 
 // Rock Paper Scissors
 const RPS = [
@@ -155,7 +156,8 @@ function findOpponents(myId) {
     oppId = myId + Math.floor(Math.random() * PLAYER_COUNT);
     if (oppId >= PLAYER_COUNT) oppId = oppId - PLAYER_COUNT;
     const oppPwr = players[oppId].pwr;
-    const oppTrophies = players[oppId].locked;
+    // toto: optional frozen rule
+    const oppTrophies = FROZEN?players[oppId].locked: players[oppId].trophies;
     const fitness1 = Math.pow(0.9, Math.abs(myTrophies - oppTrophies) / 400);
     const fitness2 = Math.pow(0.9, Math.abs(myPwr - oppPwr) / 100000);
     const fitness = Math.round(Math.max(fitness1, fitness2) * 100);
@@ -174,7 +176,7 @@ function findOpponents(myId) {
   for (let j = 0; j < MATCH_LIST_LEN; j++) {
     const oppId = listB[j].id;
     const oppPwr = players[oppId].pwr;
-    const oppTrophies = players[oppId].locked;
+    const oppTrophies = FROZEN?players[oppId].locked: players[oppId].trophies;
     const oppHero = players[oppId].hero;
     const potential =
       getPotential(myHero, myPwr, myTrophies, oppHero, oppPwr, oppTrophies);
@@ -183,17 +185,24 @@ function findOpponents(myId) {
     listB[j].winProbability = potential.winProbability;
     listB[j].trophyChanges = potential.trophyChanges;
   }
-  listB.sort( function(a, b) {
-    if (a.score_sanitized > b.score_sanitized) {
-      return -1;
-    } else if (a.score_sanitized < b.score_sanitized) {
-      return 1;
-    } else if (players[a.id].locked > players[b.id].locked) {
-      return -1;
-    } else {
-      return 0;
-    }
-  });
+  if(FROZEN){
+    listB.sort( function(a, b) {
+      if (a.score_sanitized > b.score_sanitized) {
+        return -1;
+      } else if (a.score_sanitized < b.score_sanitized) {
+        return 1;
+      } else if (players[a.id].locked > players[b.id].locked) {
+        return -1;
+      } else {
+        return 0;
+      }
+    }); 
+  } else {
+    listB.sort( function(a, b) {
+      //toto: small opimisation for live trophies
+    return (b.score_sanitized - b.score_sanitized) ;
+    });
+  }
   return listB;
   //
   // let selected = 0;
@@ -281,7 +290,8 @@ function simulate3() {
 
   console.log(`Season ${season}`);
   for (day = 0; day < seasonDays; day++) {
-    lockTrophies();
+
+    if (FROZEN){lockTrophies();}
 
     console.log('Day ' + day + ' :' + printTime());
     const ZONE_BRACKET = PLAYER_COUNT/8;
