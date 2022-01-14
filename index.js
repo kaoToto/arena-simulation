@@ -143,7 +143,7 @@ function getPotential(myHero, myPwr, myTrophies, oppHero, oppPwr, oppTrophies) {
   * @return {object}
   */
 function battle(myId, oppId, winProbability, trophyChanges) {
-  if (winProbability < 0.2) { // Skip the fight if you will likely loss
+  if (winProbability < 0.2) { // Skip the fight if you will likely lose
     players[myId].S += 1;
     return [0, 0];
   }
@@ -166,11 +166,12 @@ function battle(myId, oppId, winProbability, trophyChanges) {
 /**
   * Opponent search
   * @param {number} myId offense's player ID
-  * @return {[object]}
+  * @return {object} the best match
   */
-function findOpponents(myId) {
-  const MATCH_SEARCH_LEN = 400;
-  const MATCH_LIST_LEN = 100;
+function findOpponent(myId) {
+  const MATCH_SEARCH_LEN = 50;
+  const MATCH_LIST_LEN = 10; 
+  // toto, changed values above, for only one opponent is selected, no need to make 400 calcs
 
   const myHero = players[myId].hero;
   const myPwr = players[myId].pwr;
@@ -182,9 +183,12 @@ function findOpponents(myId) {
     if (oppId >= PLAYER_COUNT) oppId = oppId - PLAYER_COUNT;
     const oppPwr = players[oppId].pwr;
     const oppTrophies = FROZEN?players[oppId].locked: players[oppId].trophies;
-    const fitness1 = /*Math.pow(0.9, */ - Math.abs(myTrophies - oppTrophies) / 400;
+
+
+    const fitness1 = /*Math.pow(0.9, */ - Math.abs(myTrophies  - oppTrophies) / 400;
     const fitness2 = /*Math.pow(0.9, */ - Math.abs(myPwr - oppPwr) / 100000;
-    // toto: removed unecessary 0.9^x , comparison between 0.9^x and 0.9^y 
+    // toto: removed unecessary 0.9^x , 
+    // comparison between 0.9^x and 0.9^y 
     // is same than comparison between -x and -y
 
     const fitness = Math.round(Math.max(fitness1, fitness2) /* * 100*/ );
@@ -235,10 +239,10 @@ function findOpponents(myId) {
   }else{
     listB.sort( function(a, b) {
       //toto: small opimisation for live trophies
-     return (b.score_sanitized - a.score_sanitized) ;
+     return (b.score_sanitized - a.score_sanitized) ; //Bigger score first
     });
   }
-  return listB;
+  return listB[0];
   //
   // let selected = 0;
   // for (j = 1; j < MATCH_LIST_LEN; j++) {
@@ -348,7 +352,7 @@ function simulate3() {
 
   //toto: sort player by time zone or below code for tz is irrelevant
   if(TIMEZONE_ORDER){
-    players.sort((a,b) => a.zone> b.zone );
+    players.sort((a,b) => a.zone - b.zone ); //tz 0 first then growing
   }
 
   console.log(`Season ${season}`);
@@ -368,11 +372,25 @@ function simulate3() {
         //} else 
         {
           matchCount = (players[id].bp)?(MAX_MATCH+ADD_MATCH):(MAX_MATCH);
-          const opponents = findOpponents(id);
-          for (let match = 0; match < matchCount; match++) {
-            opp = opponents[match];
+          
+ 
+          // const opponents = findOpponents(id);
+          // toto : mistake above , that should be in the loop
+          // otherwise the trophy gain during the day is not accounted for in matchmaking
+          // worse opp.trophyChanges is calculated against the initial trophy value instead of current
+          
+          for (let match = 0; 
+              match < matchCount 
+              && match < 50; //limit to 50 matchs (in case of multiple skips)
+              match++) {
+            opp = findOpponent(id);
             battleRes =
               battle(id, opp.id, opp.winProbability, opp.trophyChanges);
+
+
+            //in case of skip: a new match is possible
+            if(battleRes[0] == 0 ) matchCount++;
+
             players[id].trophies += battleRes[0];
             players[opp.id].trophies += battleRes[1];
           } // for (match)
