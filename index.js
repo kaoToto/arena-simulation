@@ -170,7 +170,7 @@ function battle(myId, oppId, winProbability, trophyChanges) {
   */
 function findOpponents(myId) {
   const MATCH_SEARCH_LEN = 400;
-  const MATCH_LIST_LEN = 40;
+  const MATCH_LIST_LEN = 100;
 
   const myHero = players[myId].hero;
   const myPwr = players[myId].pwr;
@@ -235,7 +235,7 @@ function findOpponents(myId) {
   }else{
     listB.sort( function(a, b) {
       //toto: small opimisation for live trophies
-     return (b.score_sanitized - b.score_sanitized) ;
+     return (b.score_sanitized - a.score_sanitized) ;
     });
   }
   return listB;
@@ -363,9 +363,10 @@ function simulate3() {
       console.log('Time Zone ' + z);
       for (let i = 0; i < ZONE_BRACKET; i++) {
         id = ZONE_BRACKET * z + i;
-        if (players[id].inactive) {
+        //if (players[id].inactive) {
           // do nothing
-        } else {
+        //} else 
+        {
           matchCount = (players[id].bp)?(MAX_MATCH+ADD_MATCH):(MAX_MATCH);
           const opponents = findOpponents(id);
           for (let match = 0; match < matchCount; match++) {
