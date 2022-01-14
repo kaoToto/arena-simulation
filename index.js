@@ -1,12 +1,31 @@
 fs = require('fs');
+///TODO: allow revenges
 
-/// Basic Simulatio setup 
+/************ begin of sim setup ****************/
 const TIMEZONE_ORDER = true; // true: timezones play at different times
-const SCENARIO_MINIMISE_DEF_LOSS = true;
+const TIMEZONE_COUNT = 24;
+
+const SCENARIO_MINIMISE_DEF_LOSS = false;
 const SCENARIO_MINIMISE_DEF_LOSS_FACTOR = 0; // def loss don't cost a single point with zero, normal def loss with 1
 
+const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING = false; // match only players with current day's attacjk in +1/-1 range
+
+const SCENARIO_FROZEN  = false; //Frozen defensive trophies
+
+const PLAYER_COUNT =100 * 1000; // max 100 000  or enlarge players.json first
+
+const SEASONS_TO_SIM = 3; // /!\ first season is a simple initialiser, 2 minimum
+
+
+/************ end of sim setup ****************/
+
 /// different file names for each scenario 
-filename_prefix= SCENARIO_MINIMISE_DEF_LOSS ? "MDL-players":"players";
+filename_prefix=  (SCENARIO_MINIMISE_DEF_LOSS ? `MDL${SCENARIO_MINIMISE_DEF_LOSS_FACTOR}x-`:"") + 
+                  (SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING ? "PCOM-":"") +   
+                  (SCENARIO_FROZEN ? "Frozen-":"" ) +  
+                  (TIMEZONE_ORDER ? `${TIMEZONE_COUNT}-TZ-`:"") + 
+                  `${PLAYER_COUNT}-` + 
+                  "players";
 
 // Rock Paper Scissors
 const RPS = [
@@ -18,12 +37,11 @@ const RPS = [
   /* D */ [-0.23, -0.23, -0.23, -0.23, 0.03],
 ];
 
-const PLAYER_COUNT = 100 * 1000;
-let seasonDays = 7;
+
 const MAX_MATCH = 20;
 const ADD_MATCH = 10;
-const FROZEN  = false
 let players;
+let playerIdByTz;
 
 //toto: add new table so that sort by trophy  do not impact match order in following seasons.
 let sortedPlayers;
@@ -34,11 +52,19 @@ let season = 1; // first season
   * @return {void}
   */
 function reset() {
-  if(season >1 )
+  if(season >1 ){
     players = JSON.parse(fs.readFileSync(`${filename_prefix}-${season-1}.json`));
-  else 
+  }
+  else {
     //always use the same init file for first season
-    players = JSON.parse(fs.readFileSync(`players-0.json`));
+    players = JSON.parse(fs.readFileSync(`players.json`))
+    .shuffle()
+    .slice(0,PLAYER_COUNT)
+    .map(player =>{
+       player.zone = (Math.floor(Math.random() * TIMEZONE_COUNT));
+       player.power *= 1.9 / 1.4; 
+       return player; });
+  }
 
   for (i = 0; i < PLAYER_COUNT; i++) {
     prevTrophies = players[i].trophies;
@@ -54,6 +80,28 @@ function reset() {
     players[i].S = 0;
     players[i].dW = 0;
     players[i].dL = 0;
+
+    players[i].dailyBattlesCount = 0;
+   
+  }
+
+  //get players by Tz : 
+  playerIdByTz = [];
+  for (let tz = 0; tz < TIMEZONE_COUNT ; tz ++)
+  {
+    playerIdByTz[tz] = []; //needed so that playerIdByTz[z] is not null at next steps
+  }
+
+  if(TIMEZONE_ORDER){    
+    for(let playerId =0; playerId <PLAYER_COUNT; playerId++){
+      playerIdByTz[players[playerId].zone].push(playerId);
+    }
+  }
+  else{
+    //mix everyone in tz 0
+    for(let playerId =0; playerId <PLAYER_COUNT; playerId++){
+      playerIdByTz[0].push(playerId);
+    }
   }
 }
 
@@ -175,6 +223,18 @@ function battle(myId, oppId, winProbability, trophyChanges) {
     /// toto: adapted as defensive wins and losses are not symetrical
     return [trophyChanges[1], trophyChanges[2]];
 }
+/**  Randomize array in-place using Durstenfeld shuffle algorithm 
+ * * @param {[object]} this, Array to shuffle
+ * @return {[object]} Shuffled array
+*/
+Array.prototype.shuffle = function() {
+  for (var i = this.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    [this[i], this[j]] =  [this[j], this[i]] ;
+  }
+  return this;
+};
+
 
 /**
   * Opponent search
@@ -192,10 +252,10 @@ function findOpponent(myId) {
 
   const listA = [];
   for (let i = 0; i < MATCH_SEARCH_LEN; i++) {
-    oppId = myId + Math.floor(Math.random() * PLAYER_COUNT);
+    oppId = Math.floor(Math.random() * (PLAYER_COUNT-1) );
     if (oppId >= PLAYER_COUNT) oppId = oppId - PLAYER_COUNT;
     const oppPwr = players[oppId].pwr;
-    const oppTrophies = FROZEN?players[oppId].locked: players[oppId].trophies;
+    const oppTrophies = SCENARIO_FROZEN?players[oppId].locked: players[oppId].trophies;
 
 
     const fitness1 = /*Math.pow(0.9, */ - Math.abs(myTrophies  - oppTrophies) / 400;
@@ -225,7 +285,7 @@ function findOpponent(myId) {
   for (let j = 0; j < MATCH_LIST_LEN; j++) {
     const oppId = listB[j].id;
     const oppPwr = players[oppId].pwr;
-    const oppTrophies = FROZEN?players[oppId].locked: players[oppId].trophies;
+    const oppTrophies = SCENARIO_FROZEN?players[oppId].locked: players[oppId].trophies;
     const oppHero = players[oppId].hero;
     const potential =
       getPotential(myHero, myPwr, myTrophies, oppHero, oppPwr, oppTrophies);
@@ -237,7 +297,7 @@ function findOpponent(myId) {
     listB[j].winProbability = potential.winProbability;
     listB[j].trophyChanges = potential.trophyChanges;
   }
-  if(FROZEN){
+  if(SCENARIO_FROZEN){
     listB.sort( function(a, b) {
       if (a.score_sanitized > b.score_sanitized) {
         return -1;
@@ -345,6 +405,7 @@ function sortPlayers() {
   });
   
 }
+
 /**
   * Simulate season (new system by dev)
   * @return {void}
@@ -363,21 +424,52 @@ function simulate3() {
     
   }
 
+  
+
   //toto: sort player by time zone or below code for tz is irrelevant
+  /*
   if(TIMEZONE_ORDER){
     players.sort((a,b) => a.zone - b.zone ); //tz 0 first then growing
-  }
+  }// otherwise keep them shuffled 
+  */
 
   console.log(`Season ${season}`);
   for (day = 0; day < seasonDays; day++) {
-    
 
-    if (FROZEN){lockTrophies();}
+    players.map(player => ({player, dailyBattlesCount: 0 }) );
+
+    if (SCENARIO_FROZEN){lockTrophies();}
 
     console.log('Day ' + day + ' :' + printTime());
-    const ZONE_BRACKET = PLAYER_COUNT/8;
-    for (let z = 0; z < 8; z++) {
+   //const ZONE_BRACKET = PLAYER_COUNT/8;
+ 
+    for (let z = 0; z < (TIMEZONE_ORDER ? TIMEZONE_COUNT : 1 ) ; z++) {
+
       console.log('Time Zone ' + z);
+      
+      for (let match = 0; 
+            match < 50 * playerIdByTz[z].length; //limit to 50 matchs (in case of multiple skips)
+            match++) {
+            //pick a random player in tz
+            let rand = Math.floor(Math.random( )* (playerIdByTz[z].length));
+            let playerId = playerIdByTz[z][rand];
+            {
+            if(players[playerId].dailyBattlesCount < (players[playerId].bp)?(MAX_MATCH+ADD_MATCH):(MAX_MATCH)){
+              opp = findOpponent(playerId);
+              battleRes =
+                battle(playerId, opp.id, opp.winProbability, opp.trophyChanges);
+  
+  
+              //don't count skip as a match
+              if(battleRes[0] != 0 ) players[playerId].dailyBattlesCount++;
+              
+              //update scores
+              players[playerId].trophies += battleRes[0];
+              players[opp.id].trophies += battleRes[1];
+            } 
+          } //playerId
+        } // match
+        /*
       for (let i = 0; i < ZONE_BRACKET; i++) {
         id = ZONE_BRACKET * z + i;
         //if (players[id].inactive) {
@@ -409,6 +501,7 @@ function simulate3() {
           } // for (match)
         }
       } // for (i)
+      */
     } // for (z)
   }
 }
@@ -423,7 +516,7 @@ fs.writeFileSync(`${filename_prefix}-1.json`, JSON.stringify(players));
 fs.writeFileSync(`${filename_prefix}-1.csv`, printCSV());
 
 seasonDays = 14;
-for (season = 2; season < 6; season++) {
+for (season = 2; season <= SEASONS_TO_SIM; season++) {
   reset();
   simulate3();
   fs.writeFileSync(`${filename_prefix}-${season}.json`, JSON.stringify(players));
