@@ -1,5 +1,13 @@
 fs = require('fs');
-const TIMEZONE_ORDER = true;
+
+/// Basic Simulatio setup 
+const TIMEZONE_ORDER = true; // true: timezones play at different times
+const SCENARIO_MINIMISE_DEF_LOSS = true;
+const SCENARIO_MINIMISE_DEF_LOSS_FACTOR = 0; // def loss don't cost a single point with zero, normal def loss with 1
+
+/// different file names for each scenario 
+filename_prefix= SCENARIO_MINIMISE_DEF_LOSS ? "MDL-players":"players";
+
 // Rock Paper Scissors
 const RPS = [
   /*         S      C       A     Z     D */
@@ -26,7 +34,12 @@ let season = 1; // first season
   * @return {void}
   */
 function reset() {
-  players = JSON.parse(fs.readFileSync(`players-${season-1}.json`));
+  if(season >1 )
+    players = JSON.parse(fs.readFileSync(`${filename_prefix}-${season-1}.json`));
+  else 
+    //always use the same init file for first season
+    players = JSON.parse(fs.readFileSync(`players-0.json`));
+
   for (i = 0; i < PLAYER_COUNT; i++) {
     prevTrophies = players[i].trophies;
     if (prevTrophies >= 2700) {
@@ -84,7 +97,7 @@ function getTrophyChanges(myTrophies, oppTrophies) {
  /// in case of win, +20 win for attacker and -10 loss for defender
  /// in case of loss -6 loss for attacker and + 12 win for defender
 
- defLoss = Math.max(Math.floor(delta/2),1);
+ defLoss = Math.max(Math.floor(delta/2),1)*SCENARIO_MINIMISE_DEF_LOSS_FACTOR;
 
   const oppDelta =
     MAX_CHANGE / (1 + Math.exp(-0.0023*(-oppTrophies + myTrophies)));
@@ -402,19 +415,18 @@ function simulate3() {
 
 seasonDays = 7;
 season = 1;
-
 reset();
 cleanTrophies();
 simulate3();
-fs.writeFileSync('players-1.json', JSON.stringify(players));
+fs.writeFileSync(`${filename_prefix}-1.json`, JSON.stringify(players));
 
-fs.writeFileSync(`players-1.csv`, printCSV());
+fs.writeFileSync(`${filename_prefix}-1.csv`, printCSV());
 
 seasonDays = 14;
 for (season = 2; season < 6; season++) {
   reset();
   simulate3();
-  fs.writeFileSync(`players-${season}.json`, JSON.stringify(players));
+  fs.writeFileSync(`${filename_prefix}-${season}.json`, JSON.stringify(players));
   
-  fs.writeFileSync(`players-${season}.csv`, printCSV());
+  fs.writeFileSync(`${filename_prefix}-${season}.csv`, printCSV());
 }
