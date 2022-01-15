@@ -11,7 +11,7 @@ const SCENARIO_MINIMISE_DEF_LOSS = false;
 const SCENARIO_MINIMISE_DEF_LOSS_FACTOR = 0; // def loss don't cost a single point with zero, normal def loss with 1
 
 const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING = true; // match only players with current day's attacjk in +1/-1 range
-const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE = 0;
+const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE = 1;
 
 const SCENARIO_FROZEN  = false; //Frozen defensive trophies
 
@@ -21,15 +21,27 @@ const SEASONS_TO_SIM = 3; // /!\ first season is a simple initialiser, 2 minimum
 
 
 /************ end of sim setup ****************/
+console.log("--------------------------------------------------------------------");
+console.log("Scenario");
+console.log("--------");
+console.log(`- ${PLAYER_COUNT} Players`  );
+console.log(`- ${SEASONS_TO_SIM} Seasons`  );
+console.log(TIMEZONE_ORDER?("- Timezones: " + TIMEZONE_COUNT):"- Timezones: NO");
+console.log(SCENARIO_FROZEN?"- Frozen trophies: YES":"- Frozen trophies: NO");
+console.log(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING?`- Constraint on matchmaking: YES (+/- ${SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE})`:"- Constraint on matchmaking: NO");
+
+console.log(SCENARIO_MINIMISE_DEF_LOSS?`- Minimise def losses by a factor ${SCENARIO_MINIMISE_DEF_LOSS_FACTOR}` :"- Minimise def losses: NO");
 
 /// different file names for each scenario 
-filename_prefix=  (SCENARIO_MINIMISE_DEF_LOSS ? `MDL${SCENARIO_MINIMISE_DEF_LOSS_FACTOR}-`:"") + 
+filename_prefix=  "results/"+(SCENARIO_MINIMISE_DEF_LOSS ? `MDL${SCENARIO_MINIMISE_DEF_LOSS_FACTOR}-`:"") + 
                   (SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING ? `PCOM${SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE}-`:"") +   
                   (SCENARIO_FROZEN ? "Frozen-":"" ) +  
                   (TIMEZONE_ORDER ? `TZ${TIMEZONE_COUNT}-`:"") + 
                   `players${PLAYER_COUNT}` + 
                   "-Season";
 
+console.log("output files : "+ filename_prefix+"X.csv")
+console.log("--------------------------------------------------------------------");
 // Rock Paper Scissors
 const RPS = [
   /*         S      C       A     Z     D */
@@ -80,7 +92,7 @@ function reset() {
   }
   else {
     //always use the same init file for first season
-    players = JSON.parse(fs.readFileSync(`players.json`))
+    players = JSON.parse(fs.readFileSync(`input/players.json`))
     .shuffle()
     .slice(0,PLAYER_COUNT)
     .map(player =>{
