@@ -59,10 +59,11 @@ You can mix scenarios.
 
 3. Constrain possible matched opponents based on the relative attack count for the day
 
-    *This simulation mode is very slow*
+    *This simulation mode is slower*
+    PLayers are matched with oponents with the same battle count (+/- SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE ) if possible, and the scope enlarges when the match list is too small. 
 
     > ```const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING = true;``` 
-    > ```const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE = 1;``` 
+    > ```const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE = 0;``` 
 
     The result filenames are prefixed with `PCOM<Diff>-`.
 

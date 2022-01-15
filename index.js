@@ -10,12 +10,12 @@ const TIMEZONE_COUNT = 8;
 const SCENARIO_MINIMISE_DEF_LOSS = false;
 const SCENARIO_MINIMISE_DEF_LOSS_FACTOR = 0; // def loss don't cost a single point with zero, normal def loss with 1
 
-const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING = false; // match only players with current day's attacjk in +1/-1 range
-const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE = 1;
+const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING = true; // match only players with current day's attacjk in +1/-1 range
+const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE = 0;
 
 const SCENARIO_FROZEN  = false; //Frozen defensive trophies
 
-const PLAYER_COUNT  = 50 * 1000; // max 100 000  or enlarge players.json first
+const PLAYER_COUNT  = 100 * 1000; // max 100 000  or enlarge players.json first
 
 const SEASONS_TO_SIM = 3; // /!\ first season is a simple initialiser, 2 minimum
 
@@ -296,26 +296,8 @@ function findOpponent(myId) {
   const myPwr = players[myId].pwr;
   const myTrophies = players[myId].trophies;
  
-  
-
-  if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING ){
-    eligibleOponents =[];
-    minBattleCount = players[myId].dailyBattlesCount - SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE;
-    maxBattleCount = players[myId].dailyBattlesCount + SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE;
-    players.forEach( function(player,index)  {
-      if(index!= myId && 
-        minBattleCount <= player.dailyBattlesCount && 
-        player.dailyBattlesCount <= maxBattleCount)
-          eligibleOponents.push(index)
-    });
-  }
   const listA = [];
   for (let i = 0; i < MATCH_SEARCH_LEN; i++) {
-    if( eligibleOponents.length <=10){
-      mismatch ++;
-
-      return;
-    }
     let oppId = eligibleOponents.randomElement();
     if( oppId == null){
       assert(false);
@@ -324,29 +306,13 @@ function findOpponent(myId) {
     // neglect the probability thata players gets matched to himself ...
     const oppPwr = players[oppId].pwr;
     const oppTrophies = SCENARIO_FROZEN?players[oppId].locked: players[oppId].trophies;
-
-    
-    //const fitness1 = /*Math.pow(0.9, */ - Math.abs(myTrophies  - oppTrophies) / 400;
-    //const fitness2 = /*Math.pow(0.9, */ - Math.abs(myPwr - oppPwr) / 120000;
-    // toto: removed unecessary 0.9^x , 
-    // comparison between 0.9^x and 0.9^y 
-    // is same than comparison between -x and -y
-
-    //const fitness = Math.round(Math.max(fitness1, fitness2) /* * 100*/ );
-    
-        //toto:  removed  fitness on power
+    //toto:  removed  fitness on power
     listA.push({id: oppId, fitness: - Math.abs(myTrophies  - oppTrophies)  });
   }
   listA.sort( function(a, b) {
     //toto: optimisation and simplification of sort
     return b.fitness -a.fitness
-   /* if (a.fitness > b.fitness) {
-      return -1;
-    } else if (a.fitness < b.fitness) 
-    {
-      return 1;
-    }
-    return 0;*/
+
   } );
   
 
@@ -358,8 +324,6 @@ function findOpponent(myId) {
     const oppHero = players[oppId].hero;
     const potential =
       getPotential(myHero, myPwr, myTrophies, oppHero, oppPwr, oppTrophies);
-      // toto: removed line below: not used
-      // listB[j].score = potential.score; 
 
       // simplified line below, used only in comparison
     listB[j].score_sanitized = potential.score //Math.round(potential.score * 5000);
@@ -385,27 +349,105 @@ function findOpponent(myId) {
     });
   }
   return listB[0];
-  //
-  // let selected = 0;
-  // for (j = 1; j < MATCH_LIST_LEN; j++) {
-  //   aScore = Math.round(list[j].score * 5000);
-  //   bScore = Math.round(list[selected].score * 5000);
-  //
-  //   if (list[j].score > list[selected].score) {
-  //     selected = j;
-  //   } else if (list[j].score == list[selected].score) {
-  //     if (players[list[j].id].locked > players[list[selected].id].locked) {
-  //       selected = j;
-  //     }
-  //   }
-  // }
-  // return {
-  //   id: list[selected].id,
-  //   winProbability: list[selected].winProbability,
-  //   trophyChanges: list[selected].trophyChanges,
-  // };
 }
+function findOpponentwithconstraint(myId) {
+  const MATCH_SEARCH_LEN = 50;
+  const MATCH_LIST_LEN = 10; 
+  // toto, changed values above, for only one opponent is selected, no need to make 400 calcs
 
+  const myHero = players[myId].hero;
+  const myPwr = players[myId].pwr;
+  const myTrophies = players[myId].trophies;
+ 
+  
+
+  
+  minBattleCount = Math.max(0,players[myId].dailyBattlesCount - SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE);
+  maxBattleCount = Math.min(40,players[myId].dailyBattlesCount + SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE);
+  let eligibleCount =0;
+  for(let i = minBattleCount; i <maxBattleCount; i++)  {
+    eligibleCount += eligibleOponents[i].length;
+  }
+  if(eligibleCount < 20)
+    mismatch ++;
+
+  while( eligibleCount < 20){
+    eligibleCount =0;
+    minBattleCount = Math.max(0,minBattleCount -1);
+    maxBattleCount = Math.min(40,maxBattleCount+1);
+    for(let i = minBattleCount; i <maxBattleCount; i++)  {
+      eligibleCount += eligibleOponents[i].length;
+    }
+  }
+  
+  if( eligibleCount <= 10){
+    assert(false);
+    return;
+  }
+  const listA = [];
+  for (let i = 0; i < MATCH_SEARCH_LEN; i++) {
+    
+    let random = Math.floor(eligibleCount * Math.random());
+    let oppId = null;
+    for(let i = minBattleCount; i <maxBattleCount && oppId == null; i++)  {
+      if(random < eligibleOponents[i].length){
+        oppId = eligibleOponents[i][random];
+      }
+      else {
+        random -= eligibleOponents[i].length;
+      }
+    }
+     
+    if( oppId == null){
+      assert(false);
+      return;
+    }
+    // neglect the probability thata players gets matched to himself ...
+    const oppPwr = players[oppId].pwr;
+    const oppTrophies = SCENARIO_FROZEN?players[oppId].locked: players[oppId].trophies;
+
+    //toto:  removed  fitness on power
+    listA.push({id: oppId, fitness: - Math.abs(myTrophies  - oppTrophies)  });
+  }
+  listA.sort( function(a, b) {
+    //toto: optimisation and simplification of sort
+    return b.fitness -a.fitness
+  } );
+  
+
+  const listB = listA.slice(0, MATCH_LIST_LEN);
+  for (let j = 0; j < MATCH_LIST_LEN; j++) {
+    const oppId = listB[j].id;
+    const oppPwr = players[oppId].pwr;
+    const oppTrophies = SCENARIO_FROZEN?players[oppId].locked: players[oppId].trophies;
+    const oppHero = players[oppId].hero;
+    const potential = getPotential(myHero, myPwr, myTrophies, oppHero, oppPwr, oppTrophies);
+      
+    // simplified line below, used only in comparison
+    listB[j].score_sanitized = potential.score ;
+    listB[j].winProbability = potential.winProbability;
+    listB[j].trophyChanges = potential.trophyChanges;
+  }
+  if(SCENARIO_FROZEN){
+    listB.sort( function(a, b) {
+      if (a.score_sanitized > b.score_sanitized) {
+        return -1;
+      } else if (a.score_sanitized < b.score_sanitized) {
+        return 1;
+      } else if ( players[a.id].locked > players[b.id].locked) {
+        return -1;
+      } else {
+        return 0;
+      }
+    });
+  }else{
+    listB.sort( function(a, b) {
+      //toto: small opimisation for live trophies
+     return (b.score_sanitized - a.score_sanitized) ; //Bigger score first
+    });
+  }
+  return listB[0];
+}
 /**
   * Utility function
   * @return {string} formated time string
@@ -506,11 +548,21 @@ function simulate3() {
 
   console.log(`Season ${season}`);
   for (day = 0; day < seasonDays; day++) {
-
-    players.map(player => { player.dailyBattlesCount= 0 ; return player;} );
+    if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING){
+      eligibleOponents = [];
+      for (let i =0; i< 41; i++){
+        eligibleOponents[i] = [];
+      }
+      players.forEach( function (player,id) { 
+        player.dailyBattlesCount =0;
+        eligibleOponents[0].push(id);});
+    }else{
+      players.forEach( function (player,id) { 
+        player.dailyBattlesCount =0;});
+    }
 
     if (SCENARIO_FROZEN){lockTrophies();}
-
+    
     console.log('Day ' + day + ' :' + printTime());
    //const ZONE_BRACKET = PLAYER_COUNT/8;
  
@@ -526,7 +578,7 @@ function simulate3() {
             let playerId = playerIdByTz[z][rand];
             {
             if(players[playerId].dailyBattlesCount < players[playerId].maxMatch){
-              opp = findOpponent(playerId);
+              opp = SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING? findOpponentwithconstraint(playerId) : findOpponent(playerId);
               if(opp != null){
                 
                 battleRes =
@@ -534,7 +586,17 @@ function simulate3() {
 
 
                 //don't count skip as a match
-                if(battleRes[0] != 0 ) players[playerId].dailyBattlesCount++;
+                if(battleRes[0] != 0 ){
+
+                  if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING){
+                    eligibleOponents[players[playerId].dailyBattlesCount]=eligibleOponents[players[playerId].dailyBattlesCount].filter(p => p != playerId);
+                    eligibleOponents[players[playerId].dailyBattlesCount+1].push(playerId);
+
+                  }
+                  players[playerId].dailyBattlesCount++;
+
+                } 
+                
                 
                 //update scores
                 players[playerId].trophies += battleRes[0];
@@ -577,8 +639,13 @@ function simulate3() {
       } // for (i)
       */
     } // for (z)
+    if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING)
+    {
+      console.log(`days missmatchs ${mismatch} : the  selection was enlarged \n`);
+      mismatch =0;
+    }
+
   }
-  console.log(`season missmatchs ${mismatch} \n`)
 }
 
 seasonDays = 4;
