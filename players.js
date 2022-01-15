@@ -97,4 +97,4 @@ for (powerBracket = 0; powerBracket < 20; powerBracket++) {
   }
 }
 
-fs.writeFileSync('players-0.json', JSON.stringify(players));
+fs.writeFileSync('input/players.json', JSON.stringify(players));

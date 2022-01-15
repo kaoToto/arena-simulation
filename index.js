@@ -8,18 +8,19 @@ const TIMEZONE_ORDER = true; // true: timezones play at different times
 const TIMEZONE_COUNT = 8;
 
 const SCENARIO_MINIMISE_DEF_LOSS = false;
-const SCENARIO_MINIMISE_DEF_LOSS_FACTOR = 0; // def loss don't cost a single point with zero, normal def loss with 1
+const SCENARIO_MINIMISE_DEF_LOSS_FACTOR = 0.5; // def loss don't cost a single point with zero, normal def loss with 1
 
 const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING = true; // match only players with current day's attacjk in +1/-1 range
 const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE = 1;
 
 const SCENARIO_FROZEN  = false; //Frozen defensive trophies
 
-const PLAYER_COUNT  = 100 * 1000; // max 100 000  or enlarge players.json first
+const PLAYER_COUNT  = 100 * 1000; // max 100 000  or enlarge input/players.json first
 
 const SEASONS_TO_SIM = 3; // /!\ first season is a simple initialiser, 2 minimum
 
-
+const BP_RATIO = 30/100;
+const INACTIVE_RATIO = 10/100;
 /************ end of sim setup ****************/
 console.log("--------------------------------------------------------------------");
 console.log("Scenario");
@@ -42,6 +43,8 @@ filename_prefix=  "results/"+(SCENARIO_MINIMISE_DEF_LOSS ? `MDL${SCENARIO_MINIMI
 
 console.log("output files : "+ filename_prefix+"X.csv")
 console.log("--------------------------------------------------------------------");
+
+const def_loss_factor =  SCENARIO_MINIMISE_DEF_LOSS ? SCENARIO_MINIMISE_DEF_LOSS_FACTOR : 1;
 // Rock Paper Scissors
 const RPS = [
   /*         S      C       A     Z     D */
@@ -53,6 +56,7 @@ const RPS = [
 ];
 
 let mismatch = 0;
+let mismatch2 =0;
 const MAX_MATCH = 20;
 const ADD_MATCH = 10;
 const GEM_MATCH = 10;
@@ -87,6 +91,8 @@ function reset() {
 
   mismatch =0;
 
+  mismatch2 =0;
+
   if(season >1 ){
     players = JSON.parse(fs.readFileSync(`${filename_prefix}-${season-1}.json`));
   }
@@ -98,15 +104,15 @@ function reset() {
     .map(player =>{
        player.zone = (Math.floor(Math.random() * TIMEZONE_COUNT));
        player.pwr *= 1.9 / 1.4; 
-       player.bp = (Math.random() < 0.1); // 10% bp players
-       player.inactive =  player. bp ? false : (Math.random() < 0.33);
+       player.bp = (Math.random() < BP_RATIO); // 20% bp players
+       player.inactive =  player. bp ? false : (Math.random() < INACTIVE_RATIO / (1 - BP_RATIO) );
         if(player.bp){
-          player.maxMatch = MAX_MATCH +  ADD_MATCH + Math.floor(GEM_MATCH * random_normal());
+          player.maxMatch = MAX_MATCH +  ADD_MATCH + GEM_MATCH;
         } 
         else{  
           player.maxMatch =  player.inactive ? 
-                              Math.floor(MAX_MATCH /2  * random_normal()) :
-                              MAX_MATCH/2 + Math.floor((MAX_MATCH/2  +GEM_MATCH) * random_normal() ) ;
+                              Math.floor(MAX_MATCH*2/3  * random_normal()) :
+                              Math.floor(MAX_MATCH*2/3  + (MAX_MATCH/3  +GEM_MATCH +1 ) * random_normal() ) ;
         }
        return player; 
       });
@@ -122,9 +128,9 @@ function reset() {
     if (prevTrophies >= 2700) {
       players[i].trophies = 2500;
     } else if (prevTrophies >= 2200) {
-      players[i].trophies = 2200;
+      players[i].trophies = 2500;
     } else {
-      players[i].trophies = 1000;
+      players[i].trophies = 2500;
     }
     players[i].W = 0;
     players[i].L = 0;
@@ -196,7 +202,7 @@ function getTrophyChanges(myTrophies, oppTrophies) {
  /// in case of win, +20 win for attacker and -10 loss for defender
  /// in case of loss -6 loss for attacker and + 12 win for defender
 
- defLoss = Math.max(Math.floor(delta/2),1)*SCENARIO_MINIMISE_DEF_LOSS_FACTOR;
+ defLoss = Math.max(Math.floor(delta/2),1)*def_loss_factor;
 
   const oppDelta =
     MAX_CHANGE / (1 + Math.exp(-0.0023*(-oppTrophies + myTrophies)));
@@ -262,7 +268,7 @@ function battle(myId, oppId, winProbability, trophyChanges) {
 
   // Roll the dice!
   diceRoll = Math.random() ; 
-  if (diceRoll < winProbability - 0.1) { //added -0.1 to simulate mis-evaluation of battle result
+  if (diceRoll < winProbability ) { 
     players[myId].W += 1;
     players[oppId].dL += 1;
     /// toto: adapted as defensive wins and losses are not symetrical
@@ -380,10 +386,10 @@ function findOpponentwithconstraint(myId) {
   for(let i = minBattleCount; i <maxBattleCount; i++)  {
     eligibleCount += eligibleOponents[i].length;
   }
-  if(eligibleCount < 20)
+  if(eligibleCount < 40)
     mismatch ++;
 
-  while( eligibleCount < 20){
+  while( eligibleCount < 40){
     eligibleCount =0;
     minBattleCount = Math.max(0,minBattleCount -1);
     maxBattleCount = Math.min(40,maxBattleCount+1);
@@ -392,34 +398,39 @@ function findOpponentwithconstraint(myId) {
     }
   }
   
-  if( eligibleCount <= 10){
-    assert(false);
-    return;
-  }
   const listA = [];
   for (let i = 0; i < MATCH_SEARCH_LEN; i++) {
     
     let random = Math.floor(eligibleCount * Math.random());
     let oppId = null;
-    for(let i = minBattleCount; i <maxBattleCount && oppId == null; i++)  {
-      if(random < eligibleOponents[i].length){
-        oppId = eligibleOponents[i][random];
+    for(let j = minBattleCount; j <maxBattleCount && oppId == null; j++)  {
+      if(random < eligibleOponents[j].length){
+        oppId = eligibleOponents[j][random];
+        if(players[oppId].dailyBattlesCount != j)
+        {
+          eligibleOponents[j].splice(random,1);
+          eligibleCount -= 1;
+          oppId = null;
+          j = maxBattleCount;
+        }
       }
       else {
-        random -= eligibleOponents[i].length;
+        random -= eligibleOponents[j].length;
       }
     }
      
-    if( oppId == null){
-      assert(false);
-      return;
-    }
-    // neglect the probability thata players gets matched to himself ...
-    const oppPwr = players[oppId].pwr;
-    const oppTrophies = SCENARIO_FROZEN?players[oppId].locked: players[oppId].trophies;
+    if( oppId != null){
+      // neglect the probability thata players gets matched to himself ...
+      const oppPwr = players[oppId].pwr;
+      const oppTrophies = SCENARIO_FROZEN?players[oppId].locked: players[oppId].trophies;
 
-    //toto:  removed  fitness on power
-    listA.push({id: oppId, fitness: - Math.abs(myTrophies  - oppTrophies)  });
+      //toto:  removed  fitness on power
+      listA.push({id: oppId, fitness: - Math.abs(myTrophies  - oppTrophies)  });
+    }
+  }
+  if(listA == null || listA.length == 0){
+    mismatch2 ++; 
+    return;
   }
   listA.sort( function(a, b) {
     //toto: optimisation and simplification of sort
@@ -460,13 +471,18 @@ function findOpponentwithconstraint(myId) {
   }
   return listB[0];
 }
+let sim_start = null;
 /**
   * Utility function
   * @return {string} formated time string
   */
 function printTime() {
-  const dt = new Date();
-  return dt.getHours() + ':' + dt.getMinutes() + ':' + dt.getSeconds();
+  const now = new Date() ;
+  if (sim_start == null)
+    sim_start =now.getHours()*3600 +now.getMinutes()*60 +now.getSeconds();
+  const dt = now.getHours()*3600 +now.getMinutes()*60 +now.getSeconds() - sim_start;
+
+  return Math.floor(dt / 3600) + 'h ' + Math.floor(dt %3600 / 60)+ 'm ' + Math.floor(dt %60 )+'s';
 }
 
 /**
@@ -557,8 +573,6 @@ function simulate3() {
     players.sort((a,b) => a.zone - b.zone ); //tz 0 first then growing
   }// otherwise keep them shuffled 
   */
-
-  console.log(`Season ${season}`);
   for (day = 0; day < seasonDays; day++) {
     if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING){
       eligibleOponents = [];
@@ -575,7 +589,7 @@ function simulate3() {
 
     if (SCENARIO_FROZEN){lockTrophies();}
     
-    console.log('Day ' + day + ' :' + printTime());
+    console.log("Season " + season+ ' Day ' + day + '; time since simulation start ' + printTime());
    //const ZONE_BRACKET = PLAYER_COUNT/8;
  
     for (let z = 0; z < (TIMEZONE_ORDER ? TIMEZONE_COUNT : 1 ) ; z++) {
@@ -583,7 +597,9 @@ function simulate3() {
       console.log('Time Zone ' + z);
       
       for (let match = 0; 
-            match < 50 * playerIdByTz[z].length; //limit to 50 matchs (in case of multiple skips)
+            match < (30 + 2*day) * playerIdByTz[z].length; 
+            //limit to 30 to 56 matchs depending on day (in case of multiple skips)
+            //progressive matchs
             match++) {
             //pick a random player in tz
             let rand = Math.floor(Math.random( )* (playerIdByTz[z].length));
@@ -601,7 +617,8 @@ function simulate3() {
                 if(battleRes[0] != 0 ){
 
                   if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING){
-                    eligibleOponents[players[playerId].dailyBattlesCount]=eligibleOponents[players[playerId].dailyBattlesCount].filter(p => p != playerId);
+                    // optimisation we should remove eligible opponent from previous list,  but let's lazy do that later 
+                    // eligibleOponents[players[playerId].dailyBattlesCount]=eligibleOponents[players[playerId].dailyBattlesCount].filter(p => p != playerId);
                     eligibleOponents[players[playerId].dailyBattlesCount+1].push(playerId);
 
                   }
@@ -654,13 +671,15 @@ function simulate3() {
     if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING)
     {
       console.log(`days missmatchs ${mismatch} : the  selection was enlarged \n`);
+      console.log(`days miss ${mismatch2} : no opponent \n`);
       mismatch =0;
+      mismatch2 =0;
     }
 
   }
 }
 
-seasonDays = 4;
+seasonDays = 14;
 season = 1;
 reset();
 cleanTrophies();
