@@ -50,6 +50,10 @@ You can mix scenarios.
 
     The result filenames contain the number of Timezones used `TZ<count>`.
 
+    You can have time zone 0 attack all day while other attack in order
+
+    > ```const SCENARIO_ONE_TZ_PLAYS_ALL_DAY = true;```
+
 2. Minimize defensive loss
     
     Adapt the result of a defensive loss by a chosen factor
