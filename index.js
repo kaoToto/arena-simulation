@@ -8,10 +8,12 @@ fs = require('fs');
 const TIMEZONE_ORDER = true; // true: timezones play at different times
 const TIMEZONE_COUNT = 8;
 
+const SCENARIO_ONE_TZ_PLAYS_ALL_DAY = true;
+
 const SCENARIO_MINIMISE_DEF_LOSS = false;
 const SCENARIO_MINIMISE_DEF_LOSS_FACTOR = 0.5; // def loss don't cost a single point with zero, normal def loss with 1
 
-const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING = true; // match only players with current day's attacjk in +1/-1 range
+const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING = false; // match only players with current day's attacjk in +1/-1 range
 const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE = 1;
 
 const SCENARIO_FROZEN  = false; //Frozen defensive trophies
@@ -38,7 +40,8 @@ console.log(SCENARIO_MINIMISE_DEF_LOSS?`- Minimise def losses by a factor ${SCEN
 filename_prefix=  "results/"+(SCENARIO_MINIMISE_DEF_LOSS ? `MDL${SCENARIO_MINIMISE_DEF_LOSS_FACTOR}-`:"") + 
                   (SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING ? `PCOM${SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE}-`:"") +   
                   (SCENARIO_FROZEN ? "Frozen-":"" ) +  
-                  (TIMEZONE_ORDER ? `TZ${TIMEZONE_COUNT}-`:"") + 
+                  (TIMEZONE_ORDER ? `TZ${TIMEZONE_COUNT}-`:"") +
+                  (SCENARIO_ONE_TZ_PLAYS_ALL_DAY?"TZ0PAD-":"") +
                   `players${PLAYER_COUNT}` + 
                   "-Season";
 
@@ -85,6 +88,7 @@ function random_normal() {
   if (num > 1 || num < 0) return random_normal() // resample between 0 and 1
   return num
 }
+let repartition_of_tz_0=[];
 
 /**
   * Reset arena
@@ -122,6 +126,18 @@ function reset() {
 
     if(!SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING){
       players.forEach( function (_,id) { eligibleOponents.push(id);});
+    }
+    if(SCENARIO_ONE_TZ_PLAYS_ALL_DAY){
+      for (let tz = 0; tz< TIMEZONE_COUNT-1;tz++){
+        repartition_of_tz_0[tz] = [];
+      }
+      let repartition_key=0;
+      players.forEach(function(player,id) { 
+        if(player.zone == 0){
+          repartition_of_tz_0[repartition_key].push(id);
+          repartition_key = (repartition_key+1) %(TIMEZONE_COUNT-1);
+        }
+      })
     }
      
   }
@@ -601,82 +617,66 @@ function simulate3() {
     
     console.log("Season " + season+ ' Day ' + day + '; time since simulation start ' + printTime());
    //const ZONE_BRACKET = PLAYER_COUNT/8;
- 
-    for (let z = 0; z < (TIMEZONE_ORDER ? TIMEZONE_COUNT : 1 ) ; z++) {
+    const start_tz = SCENARIO_ONE_TZ_PLAYS_ALL_DAY ? 1:0;
+    for (let z = start_tz; z < (TIMEZONE_ORDER ? TIMEZONE_COUNT : 1 ) ; z++) {
 
       console.log('Time Zone ' + z);
       
       for (let match = 0; 
-            match < (30 + 2*day) * playerIdByTz[z].length; 
-            //limit to 30 to 56 matchs depending on day (in case of multiple skips)
-            //progressive matchs
-            match++) {
-            //pick a random player in tz
-            let rand = Math.floor(Math.random( )* (playerIdByTz[z].length));
-            let playerId = playerIdByTz[z][rand];
-            {
-            if(players[playerId].dailyBattlesCount < players[playerId].maxMatch){
-              opp = SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING? findOpponentwithconstraint(playerId) : findOpponent(playerId);
-              if(opp != null){
-                
-                battleRes =
-                  battle(playerId, opp.id, opp.winProbability, opp.trophyChanges);
-
-
-                //don't count skip as a match
-                if(battleRes[0] != 0 ){
-
-                  if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING){
-                    // optimisation we should remove eligible opponent from previous list,  but let's lazy do that later 
-                    // eligibleOponents[players[playerId].dailyBattlesCount]=eligibleOponents[players[playerId].dailyBattlesCount].filter(p => p != playerId);
-                    eligibleOponents[players[playerId].dailyBattlesCount+1].push(playerId);
-
-                  }
-                  players[playerId].dailyBattlesCount++;
-
-                } 
-                
-                
-                //update scores
-                players[playerId].trophies += battleRes[0];
-                players[opp.id].trophies += battleRes[1];
-              }
-            } 
-          } //playerId
-        } // match
-        /*
-      for (let i = 0; i < ZONE_BRACKET; i++) {
-        id = ZONE_BRACKET * z + i;
-        //if (players[id].inactive) {
-          // do nothing
-        //} else 
-        {
-          matchCount = (players[id].bp)?(MAX_MATCH+ADD_MATCH):(MAX_MATCH);
-          
- 
-          // const opponents = findOpponents(id);
-          // toto : mistake above , that should be in the loop
-          // otherwise the trophy gain during the day is not accounted for in matchmaking
-          // worse opp.trophyChanges is calculated against the initial trophy value instead of current
-          
-          for (let match = 0; 
-              match < matchCount 
-              && match < 50; //limit to 50 matchs (in case of multiple skips)
-              match++) {
-            opp = findOpponent(id);
-            battleRes =
-              battle(id, opp.id, opp.winProbability, opp.trophyChanges);
-
-
-            //in case of skip: a new match is possible
-            if(battleRes[0] == 0 ) matchCount++;
-
-            players[id].trophies += battleRes[0];
-            players[opp.id].trophies += battleRes[1];
-          } // for (match)
+        match < (30 + 2*day) * PLAYER_COUNT / (SCENARIO_ONE_TZ_PLAYS_ALL_DAY? Math.max(TIMEZONE_COUNT-1,1) : TIMEZONE_COUNT); 
+        //limit to 30 to 56 matchs depending on day (in case of multiple skips)
+        //progressive matchs
+        match++) {
+        //pick a random player in tz
+        let playerId ;
+        let rand = Math.floor(Math.random( )* (playerIdByTz[z].length));
+        if(SCENARIO_ONE_TZ_PLAYS_ALL_DAY){
+          let group = repartition_of_tz_0.randomElement();
+          let count = group.length + playerIdByTz[z].length;
+          let randomValue = Math.floor(Math.random()*count);
+          if(randomValue < group.length){
+            playerId = group[randomValue];
+          }else{
+            playerId = playerIdByTz[z][randomValue-group.length];
+          }
         }
-      } // for (i)
-      */
+        else{
+          playerId= playerIdByTz[z][rand];
+        }
+        if(playerId==null){
+          assert(false);
+        }
+        else
+        {
+        if(players[playerId].dailyBattlesCount < players[playerId].maxMatch){
+          opp = SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING? findOpponentwithconstraint(playerId) : findOpponent(playerId);
+          if(opp != null){
+            
+            battleRes =
+              battle(playerId, opp.id, opp.winProbability, opp.trophyChanges);
+
+
+            //don't count skip as a match
+            if(battleRes[0] != 0 ){
+
+              if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING){
+                // optimisation we should remove eligible opponent from previous list,  but let's lazy do that later 
+                // eligibleOponents[players[playerId].dailyBattlesCount]=eligibleOponents[players[playerId].dailyBattlesCount].filter(p => p != playerId);
+                eligibleOponents[players[playerId].dailyBattlesCount+1].push(playerId);
+
+              }
+              players[playerId].dailyBattlesCount++;
+
+            } 
+            
+            
+            //update scores
+            players[playerId].trophies += battleRes[0];
+            players[opp.id].trophies += battleRes[1];
+          }
+        } 
+        } //playerId
+      } // match
     } // for (z)
     if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING)
     {
