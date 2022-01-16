@@ -1,6 +1,7 @@
 const { assert } = require('console');
 
 fs = require('fs');
+
 ///TODO: allow revenges
 
 /************ begin of sim setup ****************/
@@ -59,11 +60,13 @@ let mismatch = 0;
 let mismatch2 =0;
 const MAX_MATCH = 20;
 const ADD_MATCH = 10;
+
 const GEM_MATCH = 10;
 let players;
 let eligibleOponents =[];
 
 let playerIdByTz;
+
 
 //toto: add new table so that sort by trophy  do not impact match order in following seasons.
 let sortedPlayers;
@@ -212,6 +215,7 @@ function getTrophyChanges(myTrophies, oppTrophies) {
   /// toto : limit defensive gains for Konq (above 4500)
   if ( defGain >4 && oppTrophies > 4500) { defGain -=3;}
 
+
   loss = Math.floor(oppDelta/2);
   if (loss < 0)loss = 1;
 
@@ -326,10 +330,11 @@ function findOpponent(myId) {
     const oppTrophies = SCENARIO_FROZEN?players[oppId].locked: players[oppId].trophies;
     //toto:  removed  fitness on power
     listA.push({id: oppId, fitness: - Math.abs(myTrophies  - oppTrophies)  });
+
+    
   }
   listA.sort( function(a, b) {
     //toto: optimisation and simplification of sort
-    return b.fitness -a.fitness
 
   } );
   
@@ -338,6 +343,7 @@ function findOpponent(myId) {
   for (let j = 0; j < MATCH_LIST_LEN; j++) {
     const oppId = listB[j].id;
     const oppPwr = players[oppId].pwr;
+
     const oppTrophies = SCENARIO_FROZEN?players[oppId].locked: players[oppId].trophies;
     const oppHero = players[oppId].hero;
     const potential =
@@ -348,7 +354,9 @@ function findOpponent(myId) {
     listB[j].winProbability = potential.winProbability;
     listB[j].trophyChanges = potential.trophyChanges;
   }
+
   if(SCENARIO_FROZEN){
+
     listB.sort( function(a, b) {
       if (a.score_sanitized > b.score_sanitized) {
         return -1;
@@ -367,6 +375,7 @@ function findOpponent(myId) {
     });
   }
   return listB[0];
+
 }
 function findOpponentwithconstraint(myId) {
   const MATCH_SEARCH_LEN = 50;
@@ -492,6 +501,7 @@ function printTime() {
 function printCSV() {
   sortPlayers();
   csv = 'player id,bp,inactive,zone,hero,pwr,trophies,skip,win,loss,d win,d loss,max attacks\n';
+
   for (i = 0; i < PLAYER_COUNT; i++) {
     csv +=
     sortedPlayers[i].id + ',' +
@@ -546,7 +556,6 @@ function sortPlayers() {
   });
   
 }
-
 /**
   * Simulate season (new system by dev)
   * @return {void}
@@ -563,6 +572,7 @@ function simulate3() {
         players[i].locked = players[i].trophies;
       }
     
+
   }
 
   
@@ -683,8 +693,7 @@ seasonDays = 14;
 season = 1;
 reset();
 cleanTrophies();
-simulate3();
-fs.writeFileSync(`${filename_prefix}-1.json`, JSON.stringify(players));
+simulate3();fs.writeFileSync(`${filename_prefix}-1.json`, JSON.stringify(players));
 
 fs.writeFileSync(`${filename_prefix}-1.csv`, printCSV());
 
