@@ -31,6 +31,7 @@ console.log("--------");
 console.log(`- ${PLAYER_COUNT} Players`  );
 console.log(`- ${SEASONS_TO_SIM} Seasons`  );
 console.log(TIMEZONE_ORDER?("- Timezones: " + TIMEZONE_COUNT):"- Timezones: NO");
+console.log(TIMEZONE_ORDER == false || SCENARIO_ONE_TZ_PLAYS_ALL_DAY? "Timezone 0 plays all day":"");
 console.log(SCENARIO_FROZEN?"- Frozen trophies: YES":"- Frozen trophies: NO");
 console.log(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING?`- Constraint on matchmaking: YES (+/- ${SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE})`:"- Constraint on matchmaking: NO");
 
@@ -131,11 +132,11 @@ function reset() {
       for (let tz = 0; tz< TIMEZONE_COUNT-1;tz++){
         repartition_of_tz_0[tz] = [];
       }
-      let repartition_key=0;
+      //let repartition_key=0;
       players.forEach(function(player,id) { 
         if(player.zone == 0){
-          repartition_of_tz_0[repartition_key].push(id);
-          repartition_key = (repartition_key+1) %(TIMEZONE_COUNT-1);
+          repartition_of_tz_0[Math.floor(Math.random()*(TIMEZONE_COUNT-1))].push(id);
+          //repartition_key = (repartition_key+1) %(TIMEZONE_COUNT-1);
         }
       })
     }
