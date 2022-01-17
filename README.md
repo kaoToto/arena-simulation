@@ -54,6 +54,13 @@ You can mix scenarios.
 
     > ```const SCENARIO_ONE_TZ_PLAYS_ALL_DAY = true;```
 
+    You can have one time zone where players plays about 1/3 of the day 
+
+    > ```const SCENARIO_ONE_TZ_PLAYS_8h = true;```
+
+    *if you set true for all day and 8h players in TZ 0 will play all day*
+
+
 2. Minimize defensive loss
     
     Adapt the result of a defensive loss by a chosen factor

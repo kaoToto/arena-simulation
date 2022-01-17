@@ -8,12 +8,13 @@ fs = require('fs');
 const TIMEZONE_ORDER = true; // true: timezones play at different times
 const TIMEZONE_COUNT = 8;
 
-const SCENARIO_ONE_TZ_PLAYS_ALL_DAY = true;
+const SCENARIO_ONE_TZ_PLAYS_ALL_DAY = false;
+const SCENARIO_ONE_TZ_PLAYS_8H = true;
 
 const SCENARIO_MINIMISE_DEF_LOSS = false;
 const SCENARIO_MINIMISE_DEF_LOSS_FACTOR = 0.5; // def loss don't cost a single point with zero, normal def loss with 1
 
-const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING = false; // match only players with current day's attacjk in +1/-1 range
+const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING = true; // match only players with current day's attacjk in +1/-1 range
 const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE = 1;
 
 const SCENARIO_FROZEN  = false; //Frozen defensive trophies
@@ -25,6 +26,9 @@ const SEASONS_TO_SIM = 3; // /!\ first season is a simple initialiser, 2 minimum
 const BP_RATIO = 30/100;
 const INACTIVE_RATIO = 10/100;
 /************ end of sim setup ****************/
+
+const scenario_8h = TIMEZONE_ORDER == true && SCENARIO_ONE_TZ_PLAYS_8H && (!SCENARIO_ONE_TZ_PLAYS_ALL_DAY);
+
 console.log("--------------------------------------------------------------------");
 console.log("Scenario");
 console.log("--------");
@@ -32,6 +36,7 @@ console.log(`- ${PLAYER_COUNT} Players`  );
 console.log(`- ${SEASONS_TO_SIM} Seasons`  );
 console.log(TIMEZONE_ORDER?("- Timezones: " + TIMEZONE_COUNT):"- Timezones: NO");
 console.log(TIMEZONE_ORDER == false || SCENARIO_ONE_TZ_PLAYS_ALL_DAY? "Timezone 0 plays all day":"");
+console.log(scenario_8h ? "Timezone 0 plays 8h":"");
 console.log(SCENARIO_FROZEN?"- Frozen trophies: YES":"- Frozen trophies: NO");
 console.log(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING?`- Constraint on matchmaking: YES (+/- ${SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE})`:"- Constraint on matchmaking: NO");
 
@@ -42,7 +47,8 @@ filename_prefix=  "results/"+(SCENARIO_MINIMISE_DEF_LOSS ? `MDL${SCENARIO_MINIMI
                   (SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING ? `PCOM${SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE}-`:"") +   
                   (SCENARIO_FROZEN ? "Frozen-":"" ) +  
                   (TIMEZONE_ORDER ? `TZ${TIMEZONE_COUNT}-`:"") +
-                  (SCENARIO_ONE_TZ_PLAYS_ALL_DAY?"TZ0PAD-":"") +
+                  (TIMEZONE_ORDER && SCENARIO_ONE_TZ_PLAYS_ALL_DAY?"TZ0PAD-":"") +
+                  (scenario_8h?"TZ0P8h-":"") +
                   `players${PLAYER_COUNT}` + 
                   "-Season";
 
@@ -128,17 +134,27 @@ function reset() {
     if(!SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING){
       players.forEach( function (_,id) { eligibleOponents.push(id);});
     }
-    if(SCENARIO_ONE_TZ_PLAYS_ALL_DAY){
+   
+    if(TIMEZONE_COUNT && SCENARIO_ONE_TZ_PLAYS_ALL_DAY){
       for (let tz = 0; tz< TIMEZONE_COUNT-1;tz++){
         repartition_of_tz_0[tz] = [];
+  
       }
-      //let repartition_key=0;
       players.forEach(function(player,id) { 
         if(player.zone == 0){
           repartition_of_tz_0[Math.floor(Math.random()*(TIMEZONE_COUNT-1))].push(id);
-          //repartition_key = (repartition_key+1) %(TIMEZONE_COUNT-1);
         }
       })
+    }
+    else if  (TIMEZONE_COUNT && scenario_8h){
+      for (let tz = 0; tz< 3;tz++){
+        repartition_of_tz_0[tz] = [];
+      }
+      players.forEach(function(player,id) { 
+        if(player.zone == 0){
+          repartition_of_tz_0[Math.floor(Math.random()*(3))].push(id);
+        }
+      });
     }
      
   }
@@ -618,22 +634,36 @@ function simulate3() {
     
     console.log("Season " + season+ ' Day ' + day + '; time since simulation start ' + printTime());
    //const ZONE_BRACKET = PLAYER_COUNT/8;
-    const start_tz = SCENARIO_ONE_TZ_PLAYS_ALL_DAY ? 1:0;
+    const start_tz = TIMEZONE_ORDER && (SCENARIO_ONE_TZ_PLAYS_ALL_DAY || scenario_8h)? 1:0;
     for (let z = start_tz; z < (TIMEZONE_ORDER ? TIMEZONE_COUNT : 1 ) ; z++) {
 
       console.log('Time Zone ' + z);
       
       for (let match = 0; 
-        match < (30 + 2*day) * PLAYER_COUNT / (SCENARIO_ONE_TZ_PLAYS_ALL_DAY? Math.max(TIMEZONE_COUNT-1,1) : TIMEZONE_COUNT); 
+        match < (30 + 2*day) * PLAYER_COUNT / (TIMEZONE_ORDER && SCENARIO_ONE_TZ_PLAYS_ALL_DAY? Math.max(TIMEZONE_COUNT-1,1) : TIMEZONE_COUNT); 
         //limit to 30 to 56 matchs depending on day (in case of multiple skips)
         //progressive matchs
         match++) {
         //pick a random player in tz
         let playerId ;
         let rand = Math.floor(Math.random( )* (playerIdByTz[z].length));
-        if(SCENARIO_ONE_TZ_PLAYS_ALL_DAY){
+        if(TIMEZONE_ORDER &&SCENARIO_ONE_TZ_PLAYS_ALL_DAY){
           let group = repartition_of_tz_0.randomElement();
           let count = group.length + playerIdByTz[z].length;
+          let randomValue = Math.floor(Math.random()*count);
+          if(randomValue < group.length){
+            playerId = group[randomValue];
+          }else{
+            playerId = playerIdByTz[z][randomValue-group.length];
+          }
+        }
+        else if(scenario_8h){
+          let group_number = Math.floor((z-1) * 3 /TIMEZONE_COUNT);
+          assert(group_number<3);
+
+          let group = repartition_of_tz_0[group_number];
+          let count = group.length + playerIdByTz[z].length;
+
           let randomValue = Math.floor(Math.random()*count);
           if(randomValue < group.length){
             playerId = group[randomValue];
