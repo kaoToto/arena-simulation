@@ -130,14 +130,14 @@ You can mix scenarios.
 
 
     > ```const SCENARIO_FROZEN_DEF_TROPHIES  = true;```
-    > ```const SCENARIO_AVERAGE_DEF  = true;``
+    > ```const SCENARIO_AVERAGE_DEF  = true;```
     > ```const SCENARIO_AVERAGE_DEF_FACTOR  = 30;``
 
     The later mode produces an additional csv file with each daily average made (defenses_count, defenses_points, defense_average) to check how much unfair average are made on player getting low defense counts.
 
 5. Count of players and seasons to simulate
 
-    Simulate up to 100 000 players (for more, but a new players.json init file will be needed), and any number of season.
+    Simulate up to 100 000 players (or more, but a new players.json init file will be needed), and any number of season.
 
     > ```const PLAYER_COUNT = 100000;``` 
     >
