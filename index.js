@@ -14,10 +14,13 @@ const SCENARIO_ONE_TZ_PLAYS_8H = true;
 const SCENARIO_MINIMISE_DEF_LOSS = false;
 const SCENARIO_MINIMISE_DEF_LOSS_FACTOR = 0.5; // def loss don't cost a single point with zero, normal def loss with 1
 
-const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING = true; // match only players with current day's attacjk in +1/-1 range
+const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING = false; // match only players with current day's attacjk in +1/-1 range
 const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE = 1;
 
-const SCENARIO_FROZEN  = false; //Frozen defensive trophies
+const SCENARIO_FROZEN_DEF_TROPHIES  = true; //Frozen defensive trophies
+const SCENARIO_AVERAGE_DEF  = true; //average defenses for the day
+const SCENARIO_AVERAGE_DEF_FACTOR  = 30; //multiply average defenses by
+const SCENARIO_FROZEN_OFF_TROPHIES  = false; //Frozen defensive and offensive trophies
 
 const PLAYER_COUNT  = 100 * 1000; // max 100 000  or enlarge input/players.json first
 
@@ -37,7 +40,10 @@ console.log(`- ${SEASONS_TO_SIM} Seasons`  );
 console.log(TIMEZONE_ORDER?("- Timezones: " + TIMEZONE_COUNT):"- Timezones: NO");
 console.log(TIMEZONE_ORDER == false || SCENARIO_ONE_TZ_PLAYS_ALL_DAY? "Timezone 0 plays all day":"");
 console.log(scenario_8h ? "Timezone 0 plays 8h":"");
-console.log(SCENARIO_FROZEN?"- Frozen trophies: YES":"- Frozen trophies: NO");
+console.log(SCENARIO_FROZEN_DEF_TROPHIES?"- Frozen def trophies: YES":"- Frozen def trophies: NO");
+console.log(SCENARIO_FROZEN_OFF_TROPHIES?"- Frozen off trophies: YES":"- Frozen off trophies: NO");
+console.log(SCENARIO_AVERAGE_DEF?`- Averaged defenses: YES${SCENARIO_AVERAGE_DEF_FACTOR}`:"- averaged defenses: NO");
+
 console.log(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING?`- Constraint on matchmaking: YES (+/- ${SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE})`:"- Constraint on matchmaking: NO");
 
 console.log(SCENARIO_MINIMISE_DEF_LOSS?`- Minimise def losses by a factor ${SCENARIO_MINIMISE_DEF_LOSS_FACTOR}` :"- Minimise def losses: NO");
@@ -45,7 +51,9 @@ console.log(SCENARIO_MINIMISE_DEF_LOSS?`- Minimise def losses by a factor ${SCEN
 /// different file names for each scenario 
 filename_prefix=  "results/"+(SCENARIO_MINIMISE_DEF_LOSS ? `MDL${SCENARIO_MINIMISE_DEF_LOSS_FACTOR}-`:"") + 
                   (SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING ? `PCOM${SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE}-`:"") +   
-                  (SCENARIO_FROZEN ? "Frozen-":"" ) +  
+                  (SCENARIO_FROZEN_DEF_TROPHIES ? "FrozenDefs-":"" ) +    
+                  (SCENARIO_FROZEN_OFF_TROPHIES ? "FrozenOffs-":"" ) +   
+                  (SCENARIO_AVERAGE_DEF ?`AD${SCENARIO_AVERAGE_DEF_FACTOR}-`:"" ) +  
                   (TIMEZONE_ORDER ? `TZ${TIMEZONE_COUNT}-`:"") +
                   (TIMEZONE_ORDER && SCENARIO_ONE_TZ_PLAYS_ALL_DAY?"TZ0PAD-":"") +
                   (scenario_8h?"TZ0P8h-":"") +
@@ -68,6 +76,11 @@ const RPS = [
 
 let mismatch = 0;
 let mismatch2 =0;
+let timesAPlayerEndedAdayUnderHisSTart =0;
+let totalDrop =0;
+let maxDrop =0;
+let maxRaise =0;
+
 const MAX_MATCH = 20;
 const ADD_MATCH = 10;
 
@@ -77,6 +90,8 @@ let eligibleOponents =[];
 
 let playerIdByTz;
 
+let averageDefResult =[];
+let averageDayResult =[];
 
 //toto: add new table so that sort by trophy  do not impact match order in following seasons.
 let sortedPlayers;
@@ -96,16 +111,25 @@ function random_normal() {
   return num
 }
 let repartition_of_tz_0=[];
-
+let averageDefenseEffect ="";
 /**
   * Reset arena
   * @return {void}
   */
 function reset() {
-
+  for(i=-10000; i<10001;i++){
+    averageDefResult[i]=0;
+    averageDayResult[i]=0;
+  }
   mismatch =0;
 
   mismatch2 =0;
+
+  timesAPlayerEndedAdayUnderHisSTart =0;
+  totalDrop =0;
+  maxDrop =0; 
+  maxRaise =0;
+  // averageDefenseEffect="Defenses,DefensesPoints,CalculatedPoint\n";
 
   if(season >1 ){
     players = JSON.parse(fs.readFileSync(`${filename_prefix}-${season-1}.json`));
@@ -175,6 +199,10 @@ function reset() {
     players[i].dL = 0;
 
     players[i].dailyBattlesCount = 0;
+    players[i].locked = 2500;
+    players[i].dailyDefCount = 0;
+    players[i].dailyDefTotal = 0;
+
     
   }
 
@@ -344,12 +372,12 @@ Array.prototype.randomElement = function() {
   */
 function findOpponent(myId) {
   const MATCH_SEARCH_LEN = 50;
-  const MATCH_LIST_LEN = 10; 
+  const MATCH_LIST_LEN = 50; 
   // toto, changed values above, for only one opponent is selected, no need to make 400 calcs
 
   const myHero = players[myId].hero;
   const myPwr = players[myId].pwr;
-  const myTrophies = players[myId].trophies;
+  const myTrophies = SCENARIO_FROZEN_OFF_TROPHIES?players[myId].locked: players[myId].trophies;
  
   const listA = [];
   for (let i = 0; i < MATCH_SEARCH_LEN; i++) {
@@ -360,7 +388,7 @@ function findOpponent(myId) {
     }
     // neglect the probability thata players gets matched to himself ...
     const oppPwr = players[oppId].pwr;
-    const oppTrophies = SCENARIO_FROZEN?players[oppId].locked: players[oppId].trophies;
+    const oppTrophies = SCENARIO_FROZEN_DEF_TROPHIES?players[oppId].locked: players[oppId].trophies;
     //toto:  removed  fitness on power
     listA.push({id: oppId, fitness: - Math.abs(myTrophies  - oppTrophies)  });
 
@@ -377,7 +405,7 @@ function findOpponent(myId) {
     const oppId = listB[j].id;
     const oppPwr = players[oppId].pwr;
 
-    const oppTrophies = SCENARIO_FROZEN?players[oppId].locked: players[oppId].trophies;
+    const oppTrophies = SCENARIO_FROZEN_DEF_TROPHIES?players[oppId].locked: players[oppId].trophies;
     const oppHero = players[oppId].hero;
     const potential =
       getPotential(myHero, myPwr, myTrophies, oppHero, oppPwr, oppTrophies);
@@ -388,25 +416,12 @@ function findOpponent(myId) {
     listB[j].trophyChanges = potential.trophyChanges;
   }
 
-  if(SCENARIO_FROZEN){
-
-    listB.sort( function(a, b) {
-      if (a.score_sanitized > b.score_sanitized) {
-        return -1;
-      } else if (a.score_sanitized < b.score_sanitized) {
-        return 1;
-      } else if ( players[a.id].locked > players[b.id].locked) {
-        return -1;
-      } else {
-        return 0;
-      }
-    });
-  }else{
-    listB.sort( function(a, b) {
-      //toto: small opimisation for live trophies
-     return (b.score_sanitized - a.score_sanitized) ; //Bigger score first
-    });
-  }
+  
+  listB.sort( function(a, b) {
+    //toto: small opimisation for live trophies
+    return (b.score_sanitized - a.score_sanitized) ; //Bigger score first
+  });
+  
   return listB[0];
 
 }
@@ -464,7 +479,7 @@ function findOpponentwithconstraint(myId) {
     if( oppId != null){
       // neglect the probability thata players gets matched to himself ...
       const oppPwr = players[oppId].pwr;
-      const oppTrophies = SCENARIO_FROZEN?players[oppId].locked: players[oppId].trophies;
+      const oppTrophies = SCENARIO_FROZEN_DEF_TROPHIES?players[oppId].locked: players[oppId].trophies;
 
       //toto:  removed  fitness on power
       listA.push({id: oppId, fitness: - Math.abs(myTrophies  - oppTrophies)  });
@@ -484,7 +499,7 @@ function findOpponentwithconstraint(myId) {
   for (let j = 0; j < MATCH_LIST_LEN; j++) {
     const oppId = listB[j].id;
     const oppPwr = players[oppId].pwr;
-    const oppTrophies = SCENARIO_FROZEN?players[oppId].locked: players[oppId].trophies;
+    const oppTrophies = SCENARIO_FROZEN_DEF_TROPHIES?players[oppId].locked: players[oppId].trophies;
     const oppHero = players[oppId].hero;
     const potential = getPotential(myHero, myPwr, myTrophies, oppHero, oppPwr, oppTrophies);
       
@@ -493,24 +508,12 @@ function findOpponentwithconstraint(myId) {
     listB[j].winProbability = potential.winProbability;
     listB[j].trophyChanges = potential.trophyChanges;
   }
-  if(SCENARIO_FROZEN){
-    listB.sort( function(a, b) {
-      if (a.score_sanitized > b.score_sanitized) {
-        return -1;
-      } else if (a.score_sanitized < b.score_sanitized) {
-        return 1;
-      } else if ( players[a.id].locked > players[b.id].locked) {
-        return -1;
-      } else {
-        return 0;
-      }
-    });
-  }else{
-    listB.sort( function(a, b) {
-      //toto: small opimisation for live trophies
-     return (b.score_sanitized - a.score_sanitized) ; //Bigger score first
-    });
-  }
+  
+  listB.sort( function(a, b) {
+    //toto: small opimisation for live trophies
+    return (b.score_sanitized - a.score_sanitized) ; //Bigger score first
+  });
+  
   return listB[0];
 }
 let sim_start = null;
@@ -598,17 +601,47 @@ function simulate3() {
     * Reset plus/minus
     * @return {void}
     */
-  function lockTrophies() {
+  function lockTrophies(day = 0) {
     
-      for (i = 0; i < PLAYER_COUNT; i++) {
-        
-        players[i].locked = players[i].trophies;
+    players.forEach(player => {
+      let totalGain= player.trophies-player.locked;
+      if(day==2){
+        maxDrop =0;
+        maxRaise =0;
+        totalDrop=0;
       }
-    
+      if( totalGain <0){
+        timesAPlayerEndedAdayUnderHisSTart ++;
+        totalDrop += totalGain;
+        maxDrop = Math.min(maxDrop, totalGain);
+      }
+      maxRaise = Math.max(maxRaise, totalGain);
 
+      averageDayResult[totalGain]++;
+
+      player.locked = player.trophies;
+      player.dailyDefCount =0;
+      player.dailyDefTotal =0;
+    });
   }
+/**
+    * Averages def results
+    * @return {void}
+    */
+ function unlockTrophies() {
+    players.forEach(player => {
+      const def=(player.dailyDefCount > 0)? Math.round(SCENARIO_AVERAGE_DEF_FACTOR * player.dailyDefTotal /player.dailyDefCount) :0;
+      player.trophies += def;
+      averageDefResult[def]++;
 
+      
+      averageDefenseEffect+=`${player.dailyDefCount},${player.dailyDefTotal},${def}\n`;
+
+      });
+  }
   
+  lockTrophies(0);
+    
 
   //toto: sort player by time zone or below code for tz is irrelevant
   /*
@@ -629,8 +662,20 @@ function simulate3() {
       players.forEach( function (player,id) { 
         player.dailyBattlesCount =0;});
     }
+    if(day == 5){
+      for(let i =0; i<100; i++){
+        players[i].trophies += 1000;
+        players[i].locked =players[i].trophies;
 
-    if (SCENARIO_FROZEN){lockTrophies();}
+      }for(let i =100; i<200; i++){
+        players[i].trophies -= 1000;
+        players[i].locked =players[i].trophies
+
+      }
+
+    }
+
+    
     
     console.log("Season " + season+ ' Day ' + day + '; time since simulation start ' + printTime());
    //const ZONE_BRACKET = PLAYER_COUNT/8;
@@ -646,69 +691,85 @@ function simulate3() {
         match++) {
         //pick a random player in tz
         let playerId ;
-        let rand = Math.floor(Math.random( )* (playerIdByTz[z].length));
-        if(TIMEZONE_ORDER &&SCENARIO_ONE_TZ_PLAYS_ALL_DAY){
-          let group = repartition_of_tz_0.randomElement();
-          let count = group.length + playerIdByTz[z].length;
-          let randomValue = Math.floor(Math.random()*count);
-          if(randomValue < group.length){
-            playerId = group[randomValue];
-          }else{
-            playerId = playerIdByTz[z][randomValue-group.length];
+        //if(day == 5 && playerId%5 ==0){}else
+        { 
+          let rand = Math.floor(Math.random( )* (playerIdByTz[z].length));
+          if(TIMEZONE_ORDER &&SCENARIO_ONE_TZ_PLAYS_ALL_DAY){
+            let group = repartition_of_tz_0.randomElement();
+            let count = group.length + playerIdByTz[z].length;
+            let randomValue = Math.floor(Math.random()*count);
+            if(randomValue < group.length){
+              playerId = group[randomValue];
+            }else{
+              playerId = playerIdByTz[z][randomValue-group.length];
+            }
           }
-        }
-        else if(scenario_8h){
-          let group_number = Math.floor((z-1) * 3 /TIMEZONE_COUNT);
-          assert(group_number<3);
+          else if(scenario_8h){
+            let group_number = Math.floor((z-1) * 3 /TIMEZONE_COUNT);
+            assert(group_number<3);
 
-          let group = repartition_of_tz_0[group_number];
-          let count = group.length + playerIdByTz[z].length;
+            let group = repartition_of_tz_0[group_number];
+            let count = group.length + playerIdByTz[z].length;
 
-          let randomValue = Math.floor(Math.random()*count);
-          if(randomValue < group.length){
-            playerId = group[randomValue];
-          }else{
-            playerId = playerIdByTz[z][randomValue-group.length];
+            let randomValue = Math.floor(Math.random()*count);
+            if(randomValue < group.length){
+              playerId = group[randomValue];
+            }else{
+              playerId = playerIdByTz[z][randomValue-group.length];
+            }
           }
-        }
-        else{
-          playerId= playerIdByTz[z][rand];
-        }
-        if(playerId==null){
-          assert(false);
-        }
-        else
-        {
-        if(players[playerId].dailyBattlesCount < players[playerId].maxMatch){
-          opp = SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING? findOpponentwithconstraint(playerId) : findOpponent(playerId);
-          if(opp != null){
-            
-            battleRes =
-              battle(playerId, opp.id, opp.winProbability, opp.trophyChanges);
+          else{
+            playerId= playerIdByTz[z][rand];
+          }
+          if(playerId==null){
+            assert(false);
+          }
+          else
+          {
+          if(players[playerId].dailyBattlesCount < players[playerId].maxMatch){
+            opp = SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING? findOpponentwithconstraint(playerId) : findOpponent(playerId);
+            if(opp != null){
+              
+              battleRes =
+                battle(playerId, opp.id, opp.winProbability, opp.trophyChanges);
 
 
-            //don't count skip as a match
-            if(battleRes[0] != 0 ){
+              //don't count skip as a match
+              if(battleRes[0] != 0 ){
 
-              if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING){
-                // optimisation we should remove eligible opponent from previous list,  but let's lazy do that later 
-                // eligibleOponents[players[playerId].dailyBattlesCount]=eligibleOponents[players[playerId].dailyBattlesCount].filter(p => p != playerId);
-                eligibleOponents[players[playerId].dailyBattlesCount+1].push(playerId);
+                if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING){
+                  // optimisation we should remove eligible opponent from previous list,  but let's lazy do that later 
+                  // eligibleOponents[players[playerId].dailyBattlesCount]=eligibleOponents[players[playerId].dailyBattlesCount].filter(p => p != playerId);
+                  eligibleOponents[players[playerId].dailyBattlesCount+1].push(playerId);
 
+                }
+                players[playerId].dailyBattlesCount++;
+
+              } 
+              
+              
+              //update scores
+
+              if(SCENARIO_AVERAGE_DEF){
+                players[opp.id].dailyDefCount++;
+                players[opp.id].dailyDefTotal += battleRes[1];
+              } else {        
+                players[opp.id].trophies += battleRes[1];
+             
               }
-              players[playerId].dailyBattlesCount++;
+              players[playerId].trophies += battleRes[0];
 
-            } 
-            
-            
-            //update scores
-            players[playerId].trophies += battleRes[0];
-            players[opp.id].trophies += battleRes[1];
-          }
-        } 
+              
+            }
+          } 
+        }
         } //playerId
       } // match
     } // for (z)
+
+    if(SCENARIO_AVERAGE_DEF){
+      unlockTrophies();
+    }
     if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING)
     {
       console.log(`days missmatchs ${mismatch} : the  selection was enlarged \n`);
@@ -716,7 +777,12 @@ function simulate3() {
       mismatch =0;
       mismatch2 =0;
     }
-
+   
+        lockTrophies(day);
+        console.log(`times a Player Ended A day Under His Start ${timesAPlayerEndedAdayUnderHisSTart} total Drop ${totalDrop}`);
+     console.log(`Max drop :  ${maxDrop}  Max raise: ${maxRaise}`)
+    
+    
   }
 }
 
@@ -727,6 +793,7 @@ cleanTrophies();
 simulate3();fs.writeFileSync(`${filename_prefix}-1.json`, JSON.stringify(players));
 
 fs.writeFileSync(`${filename_prefix}-1.csv`, printCSV());
+printAvgDay();
 
 seasonDays = 14;
 for (season = 2; season <= SEASONS_TO_SIM; season++) {
@@ -735,4 +802,21 @@ for (season = 2; season <= SEASONS_TO_SIM; season++) {
   fs.writeFileSync(`${filename_prefix}-${season}.json`, JSON.stringify(players));
   
   fs.writeFileSync(`${filename_prefix}-${season}.csv`, printCSV());
+  printAvgDay();
+
+}
+
+function printAvgDay(){
+  averagedef = "Points,Count\n";
+  averageday = "Points,Count\n";
+  for(i=-10000;i<10001;i++)
+  {
+    averagedef+=`${i},${averageDefResult[i]}\n`;
+    averageday+=`${i},${averageDayResult[i]}\n`
+  }
+  fs.writeFileSync(`${filename_prefix}-${season}-averagedef.csv`, averagedef);
+  fs.writeFileSync(`${filename_prefix}-${season}-averageday.csv`, averageday);
+  if(SCENARIO_AVERAGE_DEF){
+    fs.writeFileSync(`${filename_prefix}-${season}-averageDefenseEffect.csv`, averageDefenseEffect); 
+  }
 }
