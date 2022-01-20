@@ -66,12 +66,12 @@ console.log("-------------------------------------------------------------------
 const def_loss_factor =  SCENARIO_MINIMISE_DEF_LOSS ? SCENARIO_MINIMISE_DEF_LOSS_FACTOR : 1;
 // Rock Paper Scissors
 const RPS = [
-  /*         S      C       A     Z     D */
+  /*         S      C       A     SEo     D */
   /* S */ [ 0.03, -0.16,  0.10,  0.20, 0.30],
-  /* C */ [ 0.20,  0.03, -0.16,  0.10, 0.30],
-  /* A */ [-0.03,  0.20,  0.03, -0.16, 0.30],
-  /* Z */ [-0.16, -0.03,  0.20,  0.03, 0.38],
-  /* D */ [-0.23, -0.23, -0.23, -0.23, 0.03],
+  /* C */ [ 0.20,  0.03, -0.16, -0.10, 0.30],
+  /* A */ [-0.03, -0.20,  0.03, -0.16, 0.30],
+  /* Seo */ [-0.16, -0.03,  0.20,  0.03, 0.38],
+  /* D */ [ 0.23,  0.23,  0.23,  0.23, 0.03],
 ];
 
 let mismatch = 0;
@@ -617,9 +617,12 @@ function simulate3() {
       }
       maxRaise = Math.max(maxRaise, totalGain);
 
-      averageDayResult[totalGain]++;
+      averageDayResult[totalGain]=averageDayResult[totalGain]+1;
 
       player.locked = player.trophies;
+      if(NaN ==  player.locked ){
+          assert(false);
+      }
       player.dailyDefCount =0;
       player.dailyDefTotal =0;
     });
@@ -632,7 +635,7 @@ function simulate3() {
     players.forEach(player => {
       const def=(player.dailyDefCount > 0)? Math.round(SCENARIO_AVERAGE_DEF_FACTOR * player.dailyDefTotal /player.dailyDefCount) :0;
       player.trophies += def;
-      averageDefResult[def]++;
+      averageDefResult[def]=averageDefResult[def]+1;
 
       
       averageDefenseEffect+=`${player.dailyDefCount},${player.dailyDefTotal},${def}\n`;
