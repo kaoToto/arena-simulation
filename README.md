@@ -135,6 +135,13 @@ You can mix scenarios.
 
     The later mode produces an additional csv file with each daily average made (defenses_count, defenses_points, defense_average) to check how much unfair average are made on player getting low defense counts.
 
+
+    New mode suggested by peter G, Semi frozen with live defensive gains and losses, and locked offensives gains and losses. Player are matched and battle results are calculated with their live trophies. The offensive wins are then added at reset.
+
+    > ```const SCENARIO_SEMI_FROZEN  = true;```
+
+    This mode is not compatible with other FROZEN Trophies modes, and will be simulated only if they are all on false.
+
 5. Count of players and seasons to simulate
 
     Simulate up to 100 000 players (or more, but a new players.json init file will be needed), and any number of season.

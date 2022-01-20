@@ -17,10 +17,12 @@ const SCENARIO_MINIMISE_DEF_LOSS_FACTOR = 0.5; // def loss don't cost a single p
 const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING = false; // match only players with current day's attacjk in +1/-1 range
 const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE = 1;
 
-const SCENARIO_FROZEN_DEF_TROPHIES  = true; //Frozen defensive trophies
-const SCENARIO_AVERAGE_DEF  = true; //average defenses for the day
+const SCENARIO_FROZEN_DEF_TROPHIES  = false; //Frozen defensive trophies
+const SCENARIO_AVERAGE_DEF  = false; //average defenses for the day
 const SCENARIO_AVERAGE_DEF_FACTOR  = 30; //multiply average defenses by
 const SCENARIO_FROZEN_OFF_TROPHIES  = false; //Frozen defensive and offensive trophies
+const SCENARIO_SEMI_FROZEN  = true; //Frozen defensive trophies
+
 
 const PLAYER_COUNT  = 100 * 1000; // max 100 000  or enlarge input/players.json first
 
@@ -31,6 +33,7 @@ const INACTIVE_RATIO = 10/100;
 /************ end of sim setup ****************/
 
 const scenario_8h = TIMEZONE_ORDER == true && SCENARIO_ONE_TZ_PLAYS_8H && (!SCENARIO_ONE_TZ_PLAYS_ALL_DAY);
+const semi_frozen = !SCENARIO_FROZEN_DEF_TROPHIES  && !SCENARIO_FROZEN_OFF_TROPHIES  && !SCENARIO_AVERAGE_DEF && SCENARIO_SEMI_FROZEN;
 
 console.log("--------------------------------------------------------------------");
 console.log("Scenario");
@@ -43,6 +46,7 @@ console.log(scenario_8h ? "Timezone 0 plays 8h":"");
 console.log(SCENARIO_FROZEN_DEF_TROPHIES?"- Frozen def trophies: YES":"- Frozen def trophies: NO");
 console.log(SCENARIO_FROZEN_OFF_TROPHIES?"- Frozen off trophies: YES":"- Frozen off trophies: NO");
 console.log(SCENARIO_AVERAGE_DEF?`- Averaged defenses: YES${SCENARIO_AVERAGE_DEF_FACTOR}`:"- averaged defenses: NO");
+console.log(semi_frozen?"-Semi Frozen trophies (live defs, locked off): YES":"- Semi Frozen def trophies: NO");
 
 console.log(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING?`- Constraint on matchmaking: YES (+/- ${SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE})`:"- Constraint on matchmaking: NO");
 
@@ -54,6 +58,7 @@ filename_prefix=  "results/"+(SCENARIO_MINIMISE_DEF_LOSS ? `MDL${SCENARIO_MINIMI
                   (SCENARIO_FROZEN_DEF_TROPHIES ? "FrozenDefs-":"" ) +    
                   (SCENARIO_FROZEN_OFF_TROPHIES ? "FrozenOffs-":"" ) +   
                   (SCENARIO_AVERAGE_DEF ?`AD${SCENARIO_AVERAGE_DEF_FACTOR}-`:"" ) +  
+                  (semi_frozen ?`SFrozen-`:"" ) +  
                   (TIMEZONE_ORDER ? `TZ${TIMEZONE_COUNT}-`:"") +
                   (TIMEZONE_ORDER && SCENARIO_ONE_TZ_PLAYS_ALL_DAY?"TZ0PAD-":"") +
                   (scenario_8h?"TZ0P8h-":"") +
@@ -625,7 +630,12 @@ function simulate3() {
       }
       player.dailyDefCount =0;
       player.dailyDefTotal =0;
+      
     });
+    if(semi_frozen){
+      players.forEach( player => 
+        player.semiFrozenWins =0);
+    }
   }
 /**
     * Averages def results
@@ -665,6 +675,7 @@ function simulate3() {
       players.forEach( function (player,id) { 
         player.dailyBattlesCount =0;});
     }
+    
     if(day == 5){
       for(let i =0; i<100; i++){
         players[i].trophies += 1000;
@@ -756,13 +767,17 @@ function simulate3() {
               if(SCENARIO_AVERAGE_DEF){
                 players[opp.id].dailyDefCount++;
                 players[opp.id].dailyDefTotal += battleRes[1];
-              } else {        
+              }else{       
                 players[opp.id].trophies += battleRes[1];
              
               }
-              players[playerId].trophies += battleRes[0];
+              if(semi_frozen){
+                players[playerId].semiFrozenWins += battleRes[0];
+              }
+              else{
+                players[playerId].trophies += battleRes[0];
 
-              
+              }
             }
           } 
         }
@@ -772,6 +787,10 @@ function simulate3() {
 
     if(SCENARIO_AVERAGE_DEF){
       unlockTrophies();
+    }
+    if(semi_frozen){
+      players.forEach( player => 
+        player.trophies+= player.semiFrozenWins);
     }
     if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING)
     {
