@@ -1,46 +1,233 @@
+const { assert } = require('console');
+
 fs = require('fs');
-const TIMEZONE_ORDER = true;
+
+///TODO: allow revenges
+
+/************ begin of sim setup ****************/
+const TIMEZONE_ORDER = true; // true: timezones play at different times
+const TIMEZONE_COUNT = 8;
+
+const SCENARIO_ONE_TZ_PLAYS_ALL_DAY = false;
+const SCENARIO_ONE_TZ_PLAYS_8H = true;
+
+const SCENARIO_MINIMISE_DEF_LOSS = false;
+const SCENARIO_MINIMISE_DEF_LOSS_FACTOR = 0.5; // def loss don't cost a single point with zero, normal def loss with 1
+
+const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING = false; // match only players with current day's attacjk in +1/-1 range
+const SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE = 1;
+
+const SCENARIO_FROZEN_DEF_TROPHIES  = false; //Frozen defensive trophies
+const SCENARIO_AVERAGE_DEF  = false; //average defenses for the day
+const SCENARIO_AVERAGE_DEF_FACTOR  = 30; //multiply average defenses by
+const SCENARIO_FROZEN_OFF_TROPHIES  = false; //Frozen defensive and offensive trophies
+const SCENARIO_SEMI_FROZEN  = true; //Frozen defensive trophies
+
+
+const PLAYER_COUNT  = 100 * 1000; // max 100 000  or enlarge input/players.json first
+
+const SEASONS_TO_SIM = 3; // /!\ first season is a simple initialiser, 2 minimum
+
+const BP_RATIO = 30/100;
+const INACTIVE_RATIO = 10/100;
+/************ end of sim setup ****************/
+
+const scenario_8h = TIMEZONE_ORDER == true && SCENARIO_ONE_TZ_PLAYS_8H && (!SCENARIO_ONE_TZ_PLAYS_ALL_DAY);
+const semi_frozen = !SCENARIO_FROZEN_DEF_TROPHIES  && !SCENARIO_FROZEN_OFF_TROPHIES  && !SCENARIO_AVERAGE_DEF && SCENARIO_SEMI_FROZEN;
+
+console.log("--------------------------------------------------------------------");
+console.log("Scenario");
+console.log("--------");
+console.log(`- ${PLAYER_COUNT} Players`  );
+console.log(`- ${SEASONS_TO_SIM} Seasons`  );
+console.log(TIMEZONE_ORDER?("- Timezones: " + TIMEZONE_COUNT):"- Timezones: NO");
+console.log(TIMEZONE_ORDER == false || SCENARIO_ONE_TZ_PLAYS_ALL_DAY? "Timezone 0 plays all day":"");
+console.log(scenario_8h ? "Timezone 0 plays 8h":"");
+console.log(SCENARIO_FROZEN_DEF_TROPHIES?"- Frozen def trophies: YES":"- Frozen def trophies: NO");
+console.log(SCENARIO_FROZEN_OFF_TROPHIES?"- Frozen off trophies: YES":"- Frozen off trophies: NO");
+console.log(SCENARIO_AVERAGE_DEF?`- Averaged defenses: YES${SCENARIO_AVERAGE_DEF_FACTOR}`:"- averaged defenses: NO");
+console.log(semi_frozen?"-Semi Frozen trophies (live defs, locked off): YES":"- Semi Frozen def trophies: NO");
+
+console.log(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING?`- Constraint on matchmaking: YES (+/- ${SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE})`:"- Constraint on matchmaking: NO");
+
+console.log(SCENARIO_MINIMISE_DEF_LOSS?`- Minimise def losses by a factor ${SCENARIO_MINIMISE_DEF_LOSS_FACTOR}` :"- Minimise def losses: NO");
+
+/// different file names for each scenario 
+filename_prefix=  "results/"+(SCENARIO_MINIMISE_DEF_LOSS ? `MDL${SCENARIO_MINIMISE_DEF_LOSS_FACTOR}-`:"") + 
+                  (SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING ? `PCOM${SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE}-`:"") +   
+                  (SCENARIO_FROZEN_DEF_TROPHIES ? "FrozenDefs-":"" ) +    
+                  (SCENARIO_FROZEN_OFF_TROPHIES ? "FrozenOffs-":"" ) +   
+                  (SCENARIO_AVERAGE_DEF ?`AD${SCENARIO_AVERAGE_DEF_FACTOR}-`:"" ) +  
+                  (semi_frozen ?`SFrozen-`:"" ) +  
+                  (TIMEZONE_ORDER ? `TZ${TIMEZONE_COUNT}-`:"") +
+                  (TIMEZONE_ORDER && SCENARIO_ONE_TZ_PLAYS_ALL_DAY?"TZ0PAD-":"") +
+                  (scenario_8h?"TZ0P8h-":"") +
+                  `players${PLAYER_COUNT}` + 
+                  "-Season";
+
+console.log("output files : "+ filename_prefix+"X.csv")
+console.log("--------------------------------------------------------------------");
+
+const def_loss_factor =  SCENARIO_MINIMISE_DEF_LOSS ? SCENARIO_MINIMISE_DEF_LOSS_FACTOR : 1;
 // Rock Paper Scissors
 const RPS = [
-  /*         S      C       A     Z     D */
+  /*         S      C       A     SEo     D */
   /* S */ [ 0.03, -0.16,  0.10,  0.20, 0.30],
-  /* C */ [ 0.20,  0.03, -0.16,  0.10, 0.30],
-  /* A */ [-0.03,  0.20,  0.03, -0.16, 0.30],
-  /* Z */ [-0.16, -0.03,  0.20,  0.03, 0.38],
-  /* D */ [-0.23, -0.23, -0.23, -0.23, 0.03],
+  /* C */ [ 0.20,  0.03, -0.16, -0.10, 0.30],
+  /* A */ [-0.03, -0.20,  0.03, -0.16, 0.30],
+  /* Seo */ [-0.16, -0.03,  0.20,  0.03, 0.38],
+  /* D */ [ 0.23,  0.23,  0.23,  0.23, 0.03],
 ];
 
-const PLAYER_COUNT = 100 * 1000;
-let seasonDays = 7;
+let mismatch = 0;
+let mismatch2 =0;
+let timesAPlayerEndedAdayUnderHisSTart =0;
+let totalDrop =0;
+let maxDrop =0;
+let maxRaise =0;
+
 const MAX_MATCH = 20;
 const ADD_MATCH = 10;
-const FROZEN  = false
+
+const GEM_MATCH = 10;
 let players;
+let eligibleOponents =[];
+
+let playerIdByTz;
+
+let averageDefResult =[];
+let averageDayResult =[];
 
 //toto: add new table so that sort by trophy  do not impact match order in following seasons.
 let sortedPlayers;
 let season = 1; // first season
 
 /**
+ * Normal (gauss curve) random
+ * @returns {number} a random number between 0 and 1, with a normal distribution
+ */
+function random_normal() {
+  let u = 0, v = 0;
+  while(u === 0) u = Math.random(); //Converting [0,1) to (0,1)
+  while(v === 0) v = Math.random();
+  let num = Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
+  num = num / 10.0 + 0.5; // Translate to 0 -> 1
+  if (num > 1 || num < 0) return random_normal() // resample between 0 and 1
+  return num
+}
+let repartition_of_tz_0=[];
+let averageDefenseEffect ="";
+/**
   * Reset arena
   * @return {void}
   */
 function reset() {
-  players = JSON.parse(fs.readFileSync(`players-${season-1}.json`));
+  for(i=-10000; i<10001;i++){
+    averageDefResult[i]=0;
+    averageDayResult[i]=0;
+  }
+  mismatch =0;
+
+  mismatch2 =0;
+
+  timesAPlayerEndedAdayUnderHisSTart =0;
+  totalDrop =0;
+  maxDrop =0; 
+  maxRaise =0;
+  // averageDefenseEffect="Defenses,DefensesPoints,CalculatedPoint\n";
+
+  if(season >1 ){
+    players = JSON.parse(fs.readFileSync(`${filename_prefix}-${season-1}.json`));
+  }
+  else {
+    //always use the same init file for first season
+    players = JSON.parse(fs.readFileSync(`input/players.json`))
+    .shuffle()
+    .slice(0,PLAYER_COUNT)
+    .map(player =>{
+       player.zone = (Math.floor(Math.random() * TIMEZONE_COUNT));
+       player.pwr *= 1.9 / 1.4; 
+       player.bp = (Math.random() < BP_RATIO); // 20% bp players
+       player.inactive =  player. bp ? false : (Math.random() < INACTIVE_RATIO / (1 - BP_RATIO) );
+        if(player.bp){
+          player.maxMatch = MAX_MATCH +  ADD_MATCH + GEM_MATCH;
+        } 
+        else{  
+          player.maxMatch =  player.inactive ? 
+                              Math.floor(MAX_MATCH*2/3  * random_normal()) :
+                              Math.floor(MAX_MATCH*2/3  + (MAX_MATCH/3  +GEM_MATCH +1 ) * random_normal() ) ;
+        }
+       return player; 
+      });
+
+    if(!SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING){
+      players.forEach( function (_,id) { eligibleOponents.push(id);});
+    }
+   
+    if(TIMEZONE_COUNT && SCENARIO_ONE_TZ_PLAYS_ALL_DAY){
+      for (let tz = 0; tz< TIMEZONE_COUNT-1;tz++){
+        repartition_of_tz_0[tz] = [];
+  
+      }
+      players.forEach(function(player,id) { 
+        if(player.zone == 0){
+          repartition_of_tz_0[Math.floor(Math.random()*(TIMEZONE_COUNT-1))].push(id);
+        }
+      })
+    }
+    else if  (TIMEZONE_COUNT && scenario_8h){
+      for (let tz = 0; tz< 3;tz++){
+        repartition_of_tz_0[tz] = [];
+      }
+      players.forEach(function(player,id) { 
+        if(player.zone == 0){
+          repartition_of_tz_0[Math.floor(Math.random()*(3))].push(id);
+        }
+      });
+    }
+     
+  }
+
   for (i = 0; i < PLAYER_COUNT; i++) {
     prevTrophies = players[i].trophies;
     if (prevTrophies >= 2700) {
       players[i].trophies = 2500;
     } else if (prevTrophies >= 2200) {
-      players[i].trophies = 2200;
+      players[i].trophies = 2500;
     } else {
-      players[i].trophies = 1000;
+      players[i].trophies = 2500;
     }
     players[i].W = 0;
     players[i].L = 0;
     players[i].S = 0;
     players[i].dW = 0;
     players[i].dL = 0;
+
+    players[i].dailyBattlesCount = 0;
+    players[i].locked = 2500;
+    players[i].dailyDefCount = 0;
+    players[i].dailyDefTotal = 0;
+
+    
+  }
+
+  //get players by Tz : 
+  playerIdByTz = [];
+  for (let tz = 0; tz < TIMEZONE_COUNT ; tz ++)
+  {
+    playerIdByTz[tz] = []; //needed so that playerIdByTz[z] is not null at next steps
+  }
+
+  if(TIMEZONE_ORDER){    
+    for(let playerId =0; playerId <PLAYER_COUNT; playerId++){
+      playerIdByTz[players[playerId].zone].push(playerId);
+    }
+  }
+  else{
+    //mix everyone in tz 0
+    for(let playerId =0; playerId <PLAYER_COUNT; playerId++){
+      playerIdByTz[0].push(playerId);
+    }
   }
 }
 
@@ -84,7 +271,7 @@ function getTrophyChanges(myTrophies, oppTrophies) {
  /// in case of win, +20 win for attacker and -10 loss for defender
  /// in case of loss -6 loss for attacker and + 12 win for defender
 
- defLoss = Math.max(Math.floor(delta/2),1);
+ defLoss = Math.max(Math.floor(delta/2),1)*def_loss_factor;
 
   const oppDelta =
     MAX_CHANGE / (1 + Math.exp(-0.0023*(-oppTrophies + myTrophies)));
@@ -93,6 +280,7 @@ function getTrophyChanges(myTrophies, oppTrophies) {
   
   /// toto : limit defensive gains for Konq (above 4500)
   if ( defGain >4 && oppTrophies > 4500) { defGain -=3;}
+
 
   loss = Math.floor(oppDelta/2);
   if (loss < 0)loss = 1;
@@ -149,8 +337,8 @@ function battle(myId, oppId, winProbability, trophyChanges) {
   }
 
   // Roll the dice!
-  diceRoll = Math.random();
-  if (diceRoll < winProbability) {
+  diceRoll = Math.random() ; 
+  if (diceRoll < winProbability ) { 
     players[myId].W += 1;
     players[oppId].dL += 1;
     /// toto: adapted as defensive wins and losses are not symetrical
@@ -162,6 +350,25 @@ function battle(myId, oppId, winProbability, trophyChanges) {
     /// toto: adapted as defensive wins and losses are not symetrical
     return [trophyChanges[1], trophyChanges[2]];
 }
+/**  Randomize array in-place using Durstenfeld shuffle algorithm 
+ * * @param {[object]} this, Array to shuffle
+ * @return {[object]} Shuffled array
+*/
+Array.prototype.shuffle = function() {
+  for (var i = this.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    [this[i], this[j]] =  [this[j], this[i]] ;
+  }
+  return this;
+};
+/**  return random element from array 
+ * * @param {[object]} this, Source array
+ * @return {object} Random item in array
+*/
+Array.prototype.randomElement = function() {
+  return this[Math.floor(Math.random() * this.length)]
+};
+
 
 /**
   * Opponent search
@@ -170,107 +377,162 @@ function battle(myId, oppId, winProbability, trophyChanges) {
   */
 function findOpponent(myId) {
   const MATCH_SEARCH_LEN = 50;
-  const MATCH_LIST_LEN = 10; 
+  const MATCH_LIST_LEN = 50; 
   // toto, changed values above, for only one opponent is selected, no need to make 400 calcs
 
   const myHero = players[myId].hero;
   const myPwr = players[myId].pwr;
-  const myTrophies = players[myId].trophies;
-
+  const myTrophies = SCENARIO_FROZEN_OFF_TROPHIES?players[myId].locked: players[myId].trophies;
+ 
   const listA = [];
   for (let i = 0; i < MATCH_SEARCH_LEN; i++) {
-    oppId = myId + Math.floor(Math.random() * PLAYER_COUNT);
-    if (oppId >= PLAYER_COUNT) oppId = oppId - PLAYER_COUNT;
+    let oppId = eligibleOponents.randomElement();
+    if( oppId == null){
+      assert(false);
+      return;
+    }
+    // neglect the probability thata players gets matched to himself ...
     const oppPwr = players[oppId].pwr;
-    const oppTrophies = FROZEN?players[oppId].locked: players[oppId].trophies;
+    const oppTrophies = SCENARIO_FROZEN_DEF_TROPHIES?players[oppId].locked: players[oppId].trophies;
+    //toto:  removed  fitness on power
+    listA.push({id: oppId, fitness: - Math.abs(myTrophies  - oppTrophies)  });
 
-
-    const fitness1 = /*Math.pow(0.9, */ - Math.abs(myTrophies  - oppTrophies) / 400;
-    const fitness2 = /*Math.pow(0.9, */ - Math.abs(myPwr - oppPwr) / 100000;
-    // toto: removed unecessary 0.9^x , 
-    // comparison between 0.9^x and 0.9^y 
-    // is same than comparison between -x and -y
-
-    const fitness = Math.round(Math.max(fitness1, fitness2) /* * 100*/ );
-        //toto:  removed  unnecessary * 100 , does not change comparison
-    listA.push({id: oppId, fitness: fitness});
+    
   }
   listA.sort( function(a, b) {
     //toto: optimisation and simplification of sort
-    return b.fitness -a.fitness
-   /* if (a.fitness > b.fitness) {
-      return -1;
-    } else if (a.fitness < b.fitness) 
-    {
-      return 1;
-    }
-    return 0;*/
+
   } );
   
 
-  const listB = listA.slice(1, MATCH_LIST_LEN + 1);
+  const listB = listA.slice(0, MATCH_LIST_LEN);
   for (let j = 0; j < MATCH_LIST_LEN; j++) {
     const oppId = listB[j].id;
     const oppPwr = players[oppId].pwr;
-    const oppTrophies = FROZEN?players[oppId].locked: players[oppId].trophies;
+
+    const oppTrophies = SCENARIO_FROZEN_DEF_TROPHIES?players[oppId].locked: players[oppId].trophies;
     const oppHero = players[oppId].hero;
     const potential =
       getPotential(myHero, myPwr, myTrophies, oppHero, oppPwr, oppTrophies);
-      // toto: removed line below: not used
-      // listB[j].score = potential.score; 
 
       // simplified line below, used only in comparison
     listB[j].score_sanitized = potential.score //Math.round(potential.score * 5000);
     listB[j].winProbability = potential.winProbability;
     listB[j].trophyChanges = potential.trophyChanges;
   }
-  if(FROZEN){
-    listB.sort( function(a, b) {
-      if (a.score_sanitized > b.score_sanitized) {
-        return -1;
-      } else if (a.score_sanitized < b.score_sanitized) {
-        return 1;
-      } else if ( players[a.id].locked > players[b.id].locked) {
-        return -1;
-      } else {
-        return 0;
-      }
-    });
-  }else{
-    listB.sort( function(a, b) {
-      //toto: small opimisation for live trophies
-     return (b.score_sanitized - a.score_sanitized) ; //Bigger score first
-    });
-  }
-  return listB[0];
-  //
-  // let selected = 0;
-  // for (j = 1; j < MATCH_LIST_LEN; j++) {
-  //   aScore = Math.round(list[j].score * 5000);
-  //   bScore = Math.round(list[selected].score * 5000);
-  //
-  //   if (list[j].score > list[selected].score) {
-  //     selected = j;
-  //   } else if (list[j].score == list[selected].score) {
-  //     if (players[list[j].id].locked > players[list[selected].id].locked) {
-  //       selected = j;
-  //     }
-  //   }
-  // }
-  // return {
-  //   id: list[selected].id,
-  //   winProbability: list[selected].winProbability,
-  //   trophyChanges: list[selected].trophyChanges,
-  // };
-}
 
+  
+  listB.sort( function(a, b) {
+    //toto: small opimisation for live trophies
+    return (b.score_sanitized - a.score_sanitized) ; //Bigger score first
+  });
+  
+  return listB[0];
+
+}
+function findOpponentwithconstraint(myId) {
+  const MATCH_SEARCH_LEN = 50;
+  const MATCH_LIST_LEN = 10; 
+  // toto, changed values above, for only one opponent is selected, no need to make 400 calcs
+
+  const myHero = players[myId].hero;
+  const myPwr = players[myId].pwr;
+  const myTrophies = players[myId].trophies;
+ 
+  
+
+  
+  minBattleCount = Math.max(0,players[myId].dailyBattlesCount - SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE);
+  maxBattleCount = Math.min(40,players[myId].dailyBattlesCount + SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING_DIFFERENCE);
+  let eligibleCount =0;
+  for(let i = minBattleCount; i <maxBattleCount; i++)  {
+    eligibleCount += eligibleOponents[i].length;
+  }
+  if(eligibleCount < 40)
+    mismatch ++;
+
+  while( eligibleCount < 40){
+    eligibleCount =0;
+    minBattleCount = Math.max(0,minBattleCount -1);
+    maxBattleCount = Math.min(40,maxBattleCount+1);
+    for(let i = minBattleCount; i <maxBattleCount; i++)  {
+      eligibleCount += eligibleOponents[i].length;
+    }
+  }
+  
+  const listA = [];
+  for (let i = 0; i < MATCH_SEARCH_LEN; i++) {
+    
+    let random = Math.floor(eligibleCount * Math.random());
+    let oppId = null;
+    for(let j = minBattleCount; j <maxBattleCount && oppId == null; j++)  {
+      if(random < eligibleOponents[j].length){
+        oppId = eligibleOponents[j][random];
+        if(players[oppId].dailyBattlesCount != j)
+        {
+          eligibleOponents[j].splice(random,1);
+          eligibleCount -= 1;
+          oppId = null;
+          j = maxBattleCount;
+        }
+      }
+      else {
+        random -= eligibleOponents[j].length;
+      }
+    }
+     
+    if( oppId != null){
+      // neglect the probability thata players gets matched to himself ...
+      const oppPwr = players[oppId].pwr;
+      const oppTrophies = SCENARIO_FROZEN_DEF_TROPHIES?players[oppId].locked: players[oppId].trophies;
+
+      //toto:  removed  fitness on power
+      listA.push({id: oppId, fitness: - Math.abs(myTrophies  - oppTrophies)  });
+    }
+  }
+  if(listA == null || listA.length == 0){
+    mismatch2 ++; 
+    return;
+  }
+  listA.sort( function(a, b) {
+    //toto: optimisation and simplification of sort
+    return b.fitness -a.fitness
+  } );
+  
+
+  const listB = listA.slice(0, MATCH_LIST_LEN);
+  for (let j = 0; j < MATCH_LIST_LEN; j++) {
+    const oppId = listB[j].id;
+    const oppPwr = players[oppId].pwr;
+    const oppTrophies = SCENARIO_FROZEN_DEF_TROPHIES?players[oppId].locked: players[oppId].trophies;
+    const oppHero = players[oppId].hero;
+    const potential = getPotential(myHero, myPwr, myTrophies, oppHero, oppPwr, oppTrophies);
+      
+    // simplified line below, used only in comparison
+    listB[j].score_sanitized = potential.score ;
+    listB[j].winProbability = potential.winProbability;
+    listB[j].trophyChanges = potential.trophyChanges;
+  }
+  
+  listB.sort( function(a, b) {
+    //toto: small opimisation for live trophies
+    return (b.score_sanitized - a.score_sanitized) ; //Bigger score first
+  });
+  
+  return listB[0];
+}
+let sim_start = null;
 /**
   * Utility function
   * @return {string} formated time string
   */
 function printTime() {
-  const dt = new Date();
-  return dt.getHours() + ':' + dt.getMinutes() + ':' + dt.getSeconds();
+  const now = new Date() ;
+  if (sim_start == null)
+    sim_start =now.getHours()*3600 +now.getMinutes()*60 +now.getSeconds();
+  const dt = now.getHours()*3600 +now.getMinutes()*60 +now.getSeconds() - sim_start;
+
+  return Math.floor(dt / 3600) + 'h ' + Math.floor(dt %3600 / 60)+ 'm ' + Math.floor(dt %60 )+'s';
 }
 
 /**
@@ -279,7 +541,8 @@ function printTime() {
   */
 function printCSV() {
   sortPlayers();
-  csv = 'player id,bp,inactive,zone,hero,power,trophies,skip,win,loss,d win,d loss\n';
+  csv = 'player id,bp,inactive,zone,hero,pwr,trophies,skip,win,loss,d win,d loss,max attacks\n';
+
   for (i = 0; i < PLAYER_COUNT; i++) {
     csv +=
     sortedPlayers[i].id + ',' +
@@ -293,7 +556,9 @@ function printCSV() {
     sortedPlayers[i].W + ',' +
     sortedPlayers[i].L + ',' +
     sortedPlayers[i].dW + ',' +
-    sortedPlayers[i].dL + '\n';
+    sortedPlayers[i].dL  + ',' +
+    sortedPlayers[i].maxMatch 
+    + '\n';
   }
   return csv;
 }
@@ -341,80 +606,239 @@ function simulate3() {
     * Reset plus/minus
     * @return {void}
     */
-  function lockTrophies() {
+  function lockTrophies(day = 0) {
     
-      for (i = 0; i < PLAYER_COUNT; i++) {
-        
-        players[i].locked = players[i].trophies;
+    players.forEach(player => {
+      let totalGain= player.trophies-player.locked;
+      if(day==2){
+        maxDrop =0;
+        maxRaise =0;
+        totalDrop=0;
       }
-    
+      if( totalGain <0){
+        timesAPlayerEndedAdayUnderHisSTart ++;
+        totalDrop += totalGain;
+        maxDrop = Math.min(maxDrop, totalGain);
+      }
+      maxRaise = Math.max(maxRaise, totalGain);
+
+      averageDayResult[totalGain]=averageDayResult[totalGain]+1;
+
+      player.locked = player.trophies;
+      if(NaN ==  player.locked ){
+          assert(false);
+      }
+      player.dailyDefCount =0;
+      player.dailyDefTotal =0;
+      
+    });
+    if(semi_frozen){
+      players.forEach( player => 
+        player.semiFrozenWins =0);
+    }
   }
+/**
+    * Averages def results
+    * @return {void}
+    */
+ function unlockTrophies() {
+    players.forEach(player => {
+      const def=(player.dailyDefCount > 0)? Math.round(SCENARIO_AVERAGE_DEF_FACTOR * player.dailyDefTotal /player.dailyDefCount) :0;
+      player.trophies += def;
+      averageDefResult[def]=averageDefResult[def]+1;
+
+      
+      averageDefenseEffect+=`${player.dailyDefCount},${player.dailyDefTotal},${def}\n`;
+
+      });
+  }
+  
+  lockTrophies(0);
+    
 
   //toto: sort player by time zone or below code for tz is irrelevant
+  /*
   if(TIMEZONE_ORDER){
     players.sort((a,b) => a.zone - b.zone ); //tz 0 first then growing
-  }
-
-  console.log(`Season ${season}`);
+  }// otherwise keep them shuffled 
+  */
   for (day = 0; day < seasonDays; day++) {
+    if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING){
+      eligibleOponents = [];
+      for (let i =0; i< 41; i++){
+        eligibleOponents[i] = [];
+      }
+      players.forEach( function (player,id) { 
+        player.dailyBattlesCount =0;
+        eligibleOponents[0].push(id);});
+    }else{
+      players.forEach( function (player,id) { 
+        player.dailyBattlesCount =0;});
+    }
     
+    if(day == 5){
+      for(let i =0; i<100; i++){
+        players[i].trophies += 1000;
+        players[i].locked =players[i].trophies;
 
-    if (FROZEN){lockTrophies();}
+      }for(let i =100; i<200; i++){
+        players[i].trophies -= 1000;
+        players[i].locked =players[i].trophies
 
-    console.log('Day ' + day + ' :' + printTime());
-    const ZONE_BRACKET = PLAYER_COUNT/8;
-    for (let z = 0; z < 8; z++) {
+      }
+
+    }
+
+    
+    
+    console.log("Season " + season+ ' Day ' + day + '; time since simulation start ' + printTime());
+   //const ZONE_BRACKET = PLAYER_COUNT/8;
+    const start_tz = TIMEZONE_ORDER && (SCENARIO_ONE_TZ_PLAYS_ALL_DAY || scenario_8h)? 1:0;
+    for (let z = start_tz; z < (TIMEZONE_ORDER ? TIMEZONE_COUNT : 1 ) ; z++) {
+
       console.log('Time Zone ' + z);
-      for (let i = 0; i < ZONE_BRACKET; i++) {
-        id = ZONE_BRACKET * z + i;
-        //if (players[id].inactive) {
-          // do nothing
-        //} else 
-        {
-          matchCount = (players[id].bp)?(MAX_MATCH+ADD_MATCH):(MAX_MATCH);
-          
- 
-          // const opponents = findOpponents(id);
-          // toto : mistake above , that should be in the loop
-          // otherwise the trophy gain during the day is not accounted for in matchmaking
-          // worse opp.trophyChanges is calculated against the initial trophy value instead of current
-          
-          for (let match = 0; 
-              match < matchCount 
-              && match < 50; //limit to 50 matchs (in case of multiple skips)
-              match++) {
-            opp = findOpponent(id);
-            battleRes =
-              battle(id, opp.id, opp.winProbability, opp.trophyChanges);
+      
+      for (let match = 0; 
+        match < (30 + 2*day) * PLAYER_COUNT / (TIMEZONE_ORDER && SCENARIO_ONE_TZ_PLAYS_ALL_DAY? Math.max(TIMEZONE_COUNT-1,1) : TIMEZONE_COUNT); 
+        //limit to 30 to 56 matchs depending on day (in case of multiple skips)
+        //progressive matchs
+        match++) {
+        //pick a random player in tz
+        let playerId ;
+        //if(day == 5 && playerId%5 ==0){}else
+        { 
+          let rand = Math.floor(Math.random( )* (playerIdByTz[z].length));
+          if(TIMEZONE_ORDER &&SCENARIO_ONE_TZ_PLAYS_ALL_DAY){
+            let group = repartition_of_tz_0.randomElement();
+            let count = group.length + playerIdByTz[z].length;
+            let randomValue = Math.floor(Math.random()*count);
+            if(randomValue < group.length){
+              playerId = group[randomValue];
+            }else{
+              playerId = playerIdByTz[z][randomValue-group.length];
+            }
+          }
+          else if(scenario_8h){
+            let group_number = Math.floor((z-1) * 3 /TIMEZONE_COUNT);
+            assert(group_number<3);
+
+            let group = repartition_of_tz_0[group_number];
+            let count = group.length + playerIdByTz[z].length;
+
+            let randomValue = Math.floor(Math.random()*count);
+            if(randomValue < group.length){
+              playerId = group[randomValue];
+            }else{
+              playerId = playerIdByTz[z][randomValue-group.length];
+            }
+          }
+          else{
+            playerId= playerIdByTz[z][rand];
+          }
+          if(playerId==null){
+            assert(false);
+          }
+          else
+          {
+          if(players[playerId].dailyBattlesCount < players[playerId].maxMatch){
+            opp = SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING? findOpponentwithconstraint(playerId) : findOpponent(playerId);
+            if(opp != null){
+              
+              battleRes =
+                battle(playerId, opp.id, opp.winProbability, opp.trophyChanges);
 
 
-            //in case of skip: a new match is possible
-            if(battleRes[0] == 0 ) matchCount++;
+              //don't count skip as a match
+              if(battleRes[0] != 0 ){
 
-            players[id].trophies += battleRes[0];
-            players[opp.id].trophies += battleRes[1];
-          } // for (match)
+                if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING){
+                  // optimisation we should remove eligible opponent from previous list,  but let's lazy do that later 
+                  // eligibleOponents[players[playerId].dailyBattlesCount]=eligibleOponents[players[playerId].dailyBattlesCount].filter(p => p != playerId);
+                  eligibleOponents[players[playerId].dailyBattlesCount+1].push(playerId);
+
+                }
+                players[playerId].dailyBattlesCount++;
+
+              } 
+              
+              
+              //update scores
+
+              if(SCENARIO_AVERAGE_DEF){
+                players[opp.id].dailyDefCount++;
+                players[opp.id].dailyDefTotal += battleRes[1];
+              }else{       
+                players[opp.id].trophies += battleRes[1];
+             
+              }
+              if(semi_frozen){
+                players[playerId].semiFrozenWins += battleRes[0];
+              }
+              else{
+                players[playerId].trophies += battleRes[0];
+
+              }
+            }
+          } 
         }
-      } // for (i)
+        } //playerId
+      } // match
     } // for (z)
+
+    if(SCENARIO_AVERAGE_DEF){
+      unlockTrophies();
+    }
+    if(semi_frozen){
+      players.forEach( player => 
+        player.trophies+= player.semiFrozenWins);
+    }
+    if(SCENARIO_PROGRESSION_CONSTRAINT_ON_MATCHMAKING)
+    {
+      console.log(`days missmatchs ${mismatch} : the  selection was enlarged \n`);
+      console.log(`days miss ${mismatch2} : no opponent \n`);
+      mismatch =0;
+      mismatch2 =0;
+    }
+   
+        lockTrophies(day);
+        console.log(`times a Player Ended A day Under His Start ${timesAPlayerEndedAdayUnderHisSTart} total Drop ${totalDrop}`);
+     console.log(`Max drop :  ${maxDrop}  Max raise: ${maxRaise}`)
+    
+    
   }
 }
 
-seasonDays = 7;
+seasonDays = 14;
 season = 1;
-
 reset();
 cleanTrophies();
-simulate3();
-fs.writeFileSync('players-1.json', JSON.stringify(players));
+simulate3();fs.writeFileSync(`${filename_prefix}-1.json`, JSON.stringify(players));
 
-fs.writeFileSync(`players-1.csv`, printCSV());
+fs.writeFileSync(`${filename_prefix}-1.csv`, printCSV());
+printAvgDay();
 
 seasonDays = 14;
-for (season = 2; season < 6; season++) {
+for (season = 2; season <= SEASONS_TO_SIM; season++) {
   reset();
   simulate3();
-  fs.writeFileSync(`players-${season}.json`, JSON.stringify(players));
+  fs.writeFileSync(`${filename_prefix}-${season}.json`, JSON.stringify(players));
   
-  fs.writeFileSync(`players-${season}.csv`, printCSV());
+  fs.writeFileSync(`${filename_prefix}-${season}.csv`, printCSV());
+  printAvgDay();
+
+}
+
+function printAvgDay(){
+  averagedef = "Points,Count\n";
+  averageday = "Points,Count\n";
+  for(i=-10000;i<10001;i++)
+  {
+    averagedef+=`${i},${averageDefResult[i]}\n`;
+    averageday+=`${i},${averageDayResult[i]}\n`
+  }
+  fs.writeFileSync(`${filename_prefix}-${season}-averagedef.csv`, averagedef);
+  fs.writeFileSync(`${filename_prefix}-${season}-averageday.csv`, averageday);
+  if(SCENARIO_AVERAGE_DEF){
+    fs.writeFileSync(`${filename_prefix}-${season}-averageDefenseEffect.csv`, averageDefenseEffect); 
+  }
 }
