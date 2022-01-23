@@ -1,6 +1,9 @@
 *.csv
-players-*.json
+.DS_Store
+*.json
+results/
 node_modules/
 0-1.json
 .gitignore
 0-2.json
+~*.xslx
